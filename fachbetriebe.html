@@ -1,0 +1,430 @@
+<!-- Filter Buttons -->
+<div class="bundesland-filter" aria-label="Bundesland Filter">
+  <button class="bl-filter is-active" data-bl="-1" type="button">Alle</button>
+  <button class="bl-filter" data-bl="0" type="button">Wien</button>
+  <button class="bl-filter" data-bl="1" type="button">NÖ</button>
+  <button class="bl-filter" data-bl="2" type="button">OÖ</button>
+  <button class="bl-filter" data-bl="3" type="button">Bgld</button>
+  <button class="bl-filter" data-bl="4" type="button">Stmk</button>
+  <button class="bl-filter" data-bl="5" type="button">Ktn</button>
+  <button class="bl-filter" data-bl="6" type="button">Sbg</button>
+  <button class="bl-filter" data-bl="7" type="button">Tirol</button>
+  <button class="bl-filter" data-bl="8" type="button">Vbg</button>
+  <button class="bl-filter" data-bl="9" type="button">DACH</button>
+</div>
+
+<div id="specials-container"></div>
+
+<style>
+  /* Buttons oben */
+  .bundesland-filter{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:10px;
+    margin:0 0 16px 0;
+  }
+  .bl-filter{
+    appearance:none;
+    border:1px solid color-mix(in srgb, var(--global-palette9) 20%, transparent);
+    background:var(--global-palette3);
+    color:var(--global-palette9);
+    border-radius:999px;
+    height:34px;
+    padding:0 12px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    user-select:none;
+  }
+  .bl-filter:hover{
+    background: color-mix(in srgb, var(--global-palette3) 85%, var(--global-palette9));
+  }
+  .bl-filter.is-active{
+    background:var(--global-palette9);
+    color:var(--global-palette3);
+    border-color:var(--global-palette9);
+  }
+
+  /* Container – mehr Breite auf der Webseite */
+  #specials-container{
+    max-width: 1400px; /* vorher 1100px */
+    margin: 0 auto;
+    padding: 0 16px;
+  }
+
+  /* Flexbox Grid */
+  .specials-grid{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:22px;
+    align-items: stretch; /* wichtig */
+  }
+
+  /* Karte als Flex-Column */
+  .special-card{
+    display:flex;
+    flex-direction:column;
+    text-decoration:none;
+    color:inherit;
+    background:#fff;
+    border-radius:5px;
+    box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    overflow:hidden;
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+
+    width: calc((100% - (22px * 3)) / 4);
+    max-width: 320px;
+  }
+
+  .special-card:hover{
+    box-shadow:0 6px 18px rgba(0,0,0,0.12);
+    transform: translateY(-1px);
+  }
+  .special-card:focus-visible{
+    outline:3px solid rgba(0,0,0,0.35);
+    outline-offset:3px;
+  }
+
+  /* Portrait größer */
+  .special-portrait{
+  width:100%;
+  height:460px;
+  object-fit:cover;
+  object-position:center top;
+  display:block;
+}
+
+  @media (max-width: 700px){
+    .special-card{
+      width: 100%;
+      max-width: 420px;
+  }
+
+    .special-portrait{
+      min-height: 500px;
+      object-position: center top;
+    }
+  }
+
+  .special-body{
+    padding:16px 16px 18px 16px;
+    text-align:left;
+
+    display:flex;
+    flex-direction:column;
+    flex: 1;          /* statt height:100% */
+  }
+
+  /* Theme Farbe 9 */
+  .special-card{ align-items:flex-start; }
+  .special-title{
+    font-size:20px;
+    font-weight:700;
+    line-height:1.2;
+    margin:0;
+    color: var(--global-palette9);
+
+    min-height: calc(1.2em * 2);  /* 2 Zeilen reservieren */
+  }
+  .special-subtitle{
+    margin-top: 10px;
+    font-size:15px;
+    color: var(--global-palette9);
+    opacity: 0.80;
+  }
+
+  /* Responsive */
+  @media (max-width: 1100px){
+    .special-card{ width: calc((100% - 22px) / 2); }
+  }
+  @media (max-width: 700px){
+    .special-card{ width: 100%; max-width: 420px; }
+    .special-portrait{ height: 300px; }
+  }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const PLACEHOLDER_PORTRAIT = "https://keo.at/wp-content/uploads/2026/02/KEO-PLATZHALTER.png";
+
+    const businesses = [
+  {
+    title: "Schlosserei Nakovich GmbH",
+    subtitle: "Ing. Herbert Nakovich",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/NAKOVICH.png",
+    website: "https://keo.at/nakovich_herbert/",
+    bundesland: 0
+  },
+  {
+    title: "Euroschloss Sicherheitstechnik GmbH",
+    subtitle: "Ibrahim Beyazit",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/EUROSCHLOSS-HOLZ.png",
+    website: "https://keo.at/beyazit_ibrahim/",
+    bundesland: 0
+  },
+  {
+    title: "PT Sicherheitstechnik GmbH",
+    subtitle: "Ing. Peter Tetzner",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/TETZNER-e1768990943630.png",
+    website: "https://keo.at/tetzner_peter/",
+    bundesland: 0
+  },
+  {
+    title: "TD Schlosserei",
+    subtitle: "Onurcan Dereli",
+    portrait: "",
+    website: "https://keo.at/dereli_onurcan/",
+    bundesland: 1
+  },
+  {
+    title: "Schlosserei & Aufsperrdienst Romsdorfer",
+    subtitle: "Thomas Romsdorfer",
+    portrait: "http://keo.at/wp-content/uploads/2026/02/ROMSDORFER.png",
+    website: "https://keo.at/romsdorfer_thomas/",
+    bundesland: 0
+  },
+  {
+    title: "Sicherheitstechnik Pöllmann",
+    subtitle: "Ing. Alexander M. Pöllmann",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/POLLMANN-e1768990973513.png",
+    website: "https://keo.at/poellmann_alexander/",
+    bundesland: 0
+  },
+  {
+    title: "Metallbau Schlosserei",
+    subtitle: "Senator Ing. Felix Krebs",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/SENATOR-KREBS.png",
+    website: "https://keo.at/krebs_felix/",
+    bundesland: 1
+  },
+  {
+    title: "Ing. Anton Beran",
+    subtitle: "",
+    portrait: "",
+    website: "https://keo.at/beran_anton/",
+    bundesland: 0
+  },
+  {
+    title: "Entrich Sicherheitssysteme",
+    subtitle: "Sabine Entrich-Collantes",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/ENTRICH-e1768991061361.png",
+    website: "https://keo.at/entrich_collantes/",
+    bundesland: 0
+  },
+  {
+    title: "BISA Sicherheitstechnik GmbH",
+    subtitle: "Hilmi, Ömar und Mustafa Bagci",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/BISA-SICHERHEITSTECHNIK-e1768991101632.png",
+    website: "https://keo.at/bagci/",
+    bundesland: 0
+  },
+  {
+    title: "KommR Mst. Christian Adamovic",
+    subtitle: "",
+    portrait: "https://keo.at/wp-content/uploads/2025/12/ChatGPT-Image-30.-Dez.-2025-08_51_13-e1767944490859.png",
+    website: "https://keo.at/adamovic/",
+    bundesland: 0
+  },
+  {
+    title: "Gefes Spezialschlosserei GmbH",
+    subtitle: "Peter Guschelbauer",
+    portrait: "",
+    website: "https://keo.at/guschelbauer_peter/",
+    bundesland: 0
+  },
+  {
+    title: "Fa. Bierhaus, Ing. W. Wagner",
+    subtitle: "Claudia Wagner",
+    portrait: "",
+    website: "https://keo.at/wagner_claudia/",
+    bundesland: 0
+  },
+  {
+    title: "Favoritner Schlüsseldienst",
+    subtitle: "Alexander Elias",
+    portrait: "",
+    website: "https://keo.at/elias_alexander/",
+    bundesland: 0
+  },
+  {
+    title: "Sicherheitssysteme Vöcklabruck GmbH",
+    subtitle: "Georg Maringer, MSc",
+    portrait: "https://keo.at/wp-content/uploads/2025/12/Georg-Maringer-1.png",
+    website: "https://keo.at/maringer/",
+    bundesland: 2
+  },
+  {
+    title: "Schlüsselkönig",
+    subtitle: "Erich Weitzer",
+    portrait: "",
+    website: "https://keo.at/weitzer_erich/",
+    bundesland: 0
+  },
+  {
+    title: "Konrad Klausser Schliessanlagen GmbH",
+    subtitle: "Konrad Klausser",
+    portrait: "",
+    website: "https://keo.at/klausser_konrad/",
+    bundesland: 0
+  },
+  {
+    title: "Barbara Zauchinger Schlosserei e.U.",
+    subtitle: "Barbara Zauchinger",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/Zauchinger-e1768990861795.png",
+    website: "https://keo.at/zauchinger_barbara/",
+    bundesland: 0
+  },
+  {
+    title: "Sammer Sicherheitstechnik",
+    subtitle: "Mag. Michael Sammer",
+    portrait: "https://keo.at/wp-content/uploads/2026/01/MICHAEL-SAMMER.png",
+    website: "https://keo.at/sammer_michael/",
+    bundesland: 4
+  },
+  {
+    title: "Bostanci Schlosserei",
+    subtitle: "Ali Bostanci",
+    portrait: "",
+    website: "https://keo.at/bostanci_ali/",
+    bundesland: 0
+  },
+  {
+    title: "EUROKEY SicherheitstechnIK GmbH",
+    subtitle: "Alex und Edi KUYENOV",
+    portrait: "http://keo.at/wp-content/uploads/2026/02/EUROKEY-1.png",
+    website: "https://keo.at/eurokey/",
+    bundesland: 0
+  },
+  {
+    title: "Auböck Sicherheitssysteme GmbH",
+    subtitle: "Ing. Stefan Auböck",
+    portrait: "http://keo.at/wp-content/uploads/2026/02/Stefan-AUBOCK.png",
+    website: "https://keo.at/auboeck_stefan/",
+    bundesland: 2
+  },
+  {
+    title: "Währinger Schlüsseldienst",
+    subtitle: "Marcel Hammer",
+    portrait: "",
+    website: "https://keo.at/hammer_marcel/",
+    bundesland: 0
+  },
+  {
+    title: "Haas GmbH",
+    subtitle: "Werner Haas",
+    portrait: "",
+    website: "https://www.haas-aufsperren.at",
+    bundesland: 4
+  },
+  {
+    title: "G. Senft GmbH",
+    subtitle: "KommR Mst. Ing. Georg Senft",
+    portrait: "https://keo.at/wp-content/uploads/2025/12/Georg-Senft.png",
+    website: "https://keo.at/senft/",
+    bundesland: 0
+  }
+];
+
+
+    const container = document.getElementById("specials-container");
+    const blButtons = Array.from(document.querySelectorAll(".bl-filter"));
+    let currentBundesland = -1;
+
+    function normalizeBL(v){
+      const n = Number(v);
+      return Number.isInteger(n) && n >= 0 && n <= 9 ? n : 0;
+    }
+
+    function portraitOrPlaceholder(url){
+      const s = String(url || "").trim();
+      return s ? s : PLACEHOLDER_PORTRAIT;
+    }
+
+    function stripSortPrefixes(title) {
+      if (!title) return "";
+      let s = String(title).trim();
+      const rx = /^(?:(?:komm?r|senator|mst|ing|mag|dr|prof|dipl\.?\-?ing|di|ba|ma|msc|bsc)\.?\s+)+/i;
+      while (rx.test(s)) s = s.replace(rx, "");
+      return s.trim();
+    }
+
+    function sortedData(arr){
+      return arr.slice().sort((a,b) => {
+        const ak = stripSortPrefixes(a.title);
+        const bk = stripSortPrefixes(b.title);
+        const cmp = ak.localeCompare(bk, "de", { sensitivity: "base" });
+        if (cmp !== 0) return cmp;
+        return String(a.title).localeCompare(String(b.title), "de", { sensitivity: "base" });
+      });
+    }
+
+    function render(){
+      container.innerHTML = "";
+      const grid = document.createElement("div");
+      grid.className = "specials-grid";
+      container.appendChild(grid);
+
+      const data = sortedData(businesses).filter(item => {
+        const bl = normalizeBL(item.bundesland);
+        return currentBundesland === -1 ? true : bl === currentBundesland;
+      });
+
+      data.forEach(item => {
+        const a = document.createElement("a");
+        a.className = "special-card";
+        a.href = item.website;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+
+        const img = document.createElement("img");
+        img.className = "special-portrait";
+        img.src = portraitOrPlaceholder(item.portrait);
+        img.alt = item.title;
+        img.onerror = () => {
+          img.onerror = null;
+          img.src = PLACEHOLDER_PORTRAIT;
+        };
+
+        const body = document.createElement("div");
+        body.className = "special-body";
+
+        const h = document.createElement("p");
+        h.className = "special-title";
+        h.textContent = item.title;
+
+        const sub = String(item.subtitle || "").trim();
+        body.appendChild(h);
+        if (sub) {
+          const s = document.createElement("p");
+          s.className = "special-subtitle";
+          s.textContent = sub;
+          body.appendChild(s);
+        }
+
+        a.appendChild(img);
+        a.appendChild(body);
+        grid.appendChild(a);
+      });
+    }
+
+    function setActiveBL(bl){
+      blButtons.forEach(b => b.classList.remove("is-active"));
+      const active = blButtons.find(b => Number(b.dataset.bl) === bl);
+      if (active) active.classList.add("is-active");
+    }
+
+    blButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const bl = Number(btn.dataset.bl);
+        currentBundesland = (currentBundesland === bl) ? -1 : bl;
+        setActiveBL(currentBundesland === -1 ? -1 : bl);
+        render();
+      });
+    });
+
+    setActiveBL(-1);
+    render();
+  });
+</script>
