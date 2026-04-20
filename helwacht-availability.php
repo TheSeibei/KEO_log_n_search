@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) exit;
 
 class Helwacht_Availability {
   const META_AVAILABLE        = 'helwacht_available';
-  const META_COMPANY          = 'company';
+  const META_INNUNG_NAME      = 'innung_name';
   const META_PHONE            = 'phone';
   const META_POSTAL_CODE      = 'postal_code';
   const META_CITY             = 'city';
@@ -17,8 +17,7 @@ class Helwacht_Availability {
   const META_WEBSITE          = 'website';
   const META_LASTUPDATE       = 'last_update';
   const META_INNUNG_ID        = 'innung_id';
-  const META_INNUNG_NAME      = 'innung_name';
-  const META_INNUNG_ADDRESS   = 'innung_address';
+    const META_INNUNG_ADDRESS   = 'innung_address';
   const OPTION_API_KEY        = 'helwacht_api_key';
 
   public function __construct() {
@@ -70,7 +69,7 @@ class Helwacht_Availability {
       $country     = 'Österreich';
 
       $available[] = [
-        'company'            => get_user_meta($u->ID, self::META_COMPANY, true) ?: $u->display_name,
+        'innung_name'        => $this->get_innung_name($u->ID, $u->display_name),
         'phone'              => $this->format_phone_international(get_user_meta($u->ID, self::META_PHONE, true)),
         'first_name'         => get_user_meta($u->ID, 'first_name', true),
         'last_name'          => get_user_meta($u->ID, 'last_name', true),
@@ -84,8 +83,7 @@ class Helwacht_Availability {
         'available'          => true,
         'last_update'        => get_user_meta($u->ID, self::META_LASTUPDATE, true),
         'innung_id'          => $this->nullable_meta($u->ID, self::META_INNUNG_ID),
-        'innung_name'        => get_user_meta($u->ID, self::META_INNUNG_NAME, true),
-        'innung_billing_address' => get_user_meta($u->ID, self::META_INNUNG_ADDRESS, true),
+        'innung_billing_address' => $this->build_innung_billing_address($u->ID),
       ];
     }
 
@@ -94,6 +92,16 @@ class Helwacht_Availability {
       'count'        => count($available),
       'data'         => $available,
     ];
+  }
+
+  private function get_innung_name($user_id, $fallback = '') {
+    $value = trim((string) get_user_meta($user_id, self::META_INNUNG_NAME, true));
+
+    if ($value === '') {
+      $value = trim((string) get_user_meta($user_id, 'company', true));
+    }
+
+    return $value !== '' ? $value : $fallback;
   }
 
   private function nullable_meta($user_id, $key) {
@@ -107,6 +115,26 @@ class Helwacht_Availability {
       trim((string) $postal_code),
       trim((string) $city),
       trim((string) $country),
+    ]);
+
+    return implode(' ', $parts);
+  }
+
+  private function build_innung_billing_address($user_id) {
+    $manual = trim((string) get_user_meta($user_id, self::META_INNUNG_ADDRESS, true));
+    if ($manual !== '') {
+      return $manual;
+    }
+
+        $address     = trim((string) get_user_meta($user_id, self::META_ADDRESS, true));
+    $postal_code = trim((string) get_user_meta($user_id, self::META_POSTAL_CODE, true));
+    $city        = trim((string) get_user_meta($user_id, self::META_CITY, true));
+    $country     = 'Österreich';
+
+    $parts = array_filter([
+      $address,
+      trim($postal_code . ' ' . $city),
+      $country,
     ]);
 
     return implode(' ', $parts);
@@ -278,10 +306,10 @@ function helwacht_user_fields($user) {
   <h2>Helwacht Daten</h2>
   <table class="form-table">
     <tr>
-      <th><label for="company">Firma</label></th>
+      <th><label for="innung_name">Innung Name</label></th>
       <td>
-        <input type="text" name="company" id="company"
-          value="<?php echo esc_attr(get_user_meta($user->ID, 'company', true)); ?>"
+        <input type="text" name="innung_name" id="innung_name"
+          value="<?php echo esc_attr(get_user_meta($user->ID, 'innung_name', true) ?: get_user_meta($user->ID, 'company', true)); ?>"
           class="regular-text" />
       </td>
     </tr>
@@ -343,20 +371,12 @@ function helwacht_user_fields($user) {
     </tr>
 
     <tr>
-      <th><label for="innung_name">Innung Name</label></th>
-      <td>
-        <input type="text" name="innung_name" id="innung_name"
-          value="<?php echo esc_attr(get_user_meta($user->ID, 'innung_name', true)); ?>"
-          class="regular-text" />
-      </td>
-    </tr>
-
-    <tr>
       <th><label for="innung_address">Innung Billing Adresse</label></th>
       <td>
         <input type="text" name="innung_address" id="innung_address"
           value="<?php echo esc_attr(get_user_meta($user->ID, 'innung_address', true)); ?>"
           class="regular-text" />
+        <p class="description">Optionaler Override. Wenn leer, wird die Adresse automatisch als Ein-String gebaut: Straße PLZ Stadt Österreich.</p>
       </td>
     </tr>
   </table>
@@ -372,14 +392,15 @@ function helwacht_save_user_fields($user_id) {
     return false;
   }
 
-  update_user_meta($user_id, 'company', sanitize_text_field($_POST['company'] ?? ''));
+    $innung_name = sanitize_text_field($_POST['innung_name'] ?? '');
+  update_user_meta($user_id, 'innung_name', $innung_name);
+  update_user_meta($user_id, 'company', $innung_name);
   update_user_meta($user_id, 'phone', sanitize_text_field($_POST['phone'] ?? ''));
   update_user_meta($user_id, 'address', sanitize_text_field($_POST['address'] ?? ''));
   update_user_meta($user_id, 'postal_code', sanitize_text_field($_POST['postal_code'] ?? ''));
   update_user_meta($user_id, 'city', sanitize_text_field($_POST['city'] ?? ''));
   update_user_meta($user_id, 'website', esc_url_raw($_POST['website'] ?? ''));
   update_user_meta($user_id, 'innung_id', sanitize_text_field($_POST['innung_id'] ?? ''));
-  update_user_meta($user_id, 'innung_name', sanitize_text_field($_POST['innung_name'] ?? ''));
   update_user_meta($user_id, 'innung_address', sanitize_text_field($_POST['innung_address'] ?? ''));
 }
 
