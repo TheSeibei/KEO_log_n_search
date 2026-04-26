@@ -16,7 +16,6 @@ class Helwacht_Availability {
   const META_ADDRESS          = 'address';
   const META_WEBSITE          = 'website';
   const META_LASTUPDATE       = 'last_update';
-  const META_INNUNG_ID        = 'innung_id';
     const META_INNUNG_ADDRESS   = 'innung_address';
   const OPTION_API_KEY        = 'helwacht_api_key';
 
@@ -82,7 +81,7 @@ class Helwacht_Availability {
         'website'            => get_user_meta($u->ID, self::META_WEBSITE, true),
         'available'          => true,
         'last_update'        => get_user_meta($u->ID, self::META_LASTUPDATE, true),
-        'innung_id'          => $this->nullable_meta($u->ID, self::META_INNUNG_ID),
+        'innung_id'          => (string) $u->ID,
         'innung_billing_address' => $this->build_innung_billing_address($u->ID),
       ];
     }
@@ -102,11 +101,6 @@ class Helwacht_Availability {
     }
 
     return $value !== '' ? $value : $fallback;
-  }
-
-  private function nullable_meta($user_id, $key) {
-    $value = get_user_meta($user_id, $key, true);
-    return $value === '' ? null : $value;
   }
 
   private function build_full_address($address, $postal_code, $city, $country = '') {
@@ -361,16 +355,6 @@ function helwacht_user_fields($user) {
     </tr>
 
     <tr>
-      <th><label for="innung_id">Innung ID</label></th>
-      <td>
-        <input type="text" name="innung_id" id="innung_id"
-          value="<?php echo esc_attr(get_user_meta($user->ID, 'innung_id', true)); ?>"
-          class="regular-text" />
-        <p class="description">Optional, z. B. aus externer DB.</p>
-      </td>
-    </tr>
-
-    <tr>
       <th><label for="innung_address">Innung Billing Adresse</label></th>
       <td>
         <input type="text" name="innung_address" id="innung_address"
@@ -400,7 +384,6 @@ function helwacht_save_user_fields($user_id) {
   update_user_meta($user_id, 'postal_code', sanitize_text_field($_POST['postal_code'] ?? ''));
   update_user_meta($user_id, 'city', sanitize_text_field($_POST['city'] ?? ''));
   update_user_meta($user_id, 'website', esc_url_raw($_POST['website'] ?? ''));
-  update_user_meta($user_id, 'innung_id', sanitize_text_field($_POST['innung_id'] ?? ''));
   update_user_meta($user_id, 'innung_address', sanitize_text_field($_POST['innung_address'] ?? ''));
 }
 
