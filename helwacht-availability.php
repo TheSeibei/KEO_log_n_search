@@ -2,27 +2,26 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.2.0
+ * Version: 0.2.1
  */
 
 if (!defined('ABSPATH')) exit;
 
 class Helwacht_Availability {
-  const META_AVAILABLE        = 'helwacht_available';
-  const META_INNUNG_NAME      = 'innung_name';
-  const META_PHONE            = 'phone';
-  const META_POSTAL_CODE      = 'postal_code';
-  const META_CITY             = 'city';
-  const META_ADDRESS          = 'address';
-  const META_WEBSITE          = 'website';
-  const META_LASTUPDATE       = 'last_update';
-    const META_INNUNG_ADDRESS   = 'innung_address';
-  const OPTION_API_KEY        = 'helwacht_api_key';
+  const META_AVAILABLE      = 'helwacht_available';
+  const META_INNUNG_NAME    = 'innung_name';
+  const META_PHONE          = 'phone';
+  const META_POSTAL_CODE    = 'postal_code';
+  const META_CITY           = 'city';
+  const META_ADDRESS        = 'address';
+  const META_WEBSITE        = 'website';
+  const META_LASTUPDATE     = 'last_update';
+  const META_INNUNG_ADDRESS = 'innung_address';
+  const OPTION_API_KEY      = 'helwacht_api_key';
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
     add_shortcode('helwacht_toggle', [$this, 'shortcode_toggle']);
-    add_action('wp_ajax_helwacht_set_availability', [$this, 'ajax_set_availability']);
     register_activation_hook(__FILE__, [$this, 'on_activate']);
   }
 
@@ -39,6 +38,14 @@ class Helwacht_Availability {
       'callback' => [$this, 'rest_get_availability'],
       'permission_callback' => [$this, 'rest_permission'],
     ]);
+
+    register_rest_route('helwacht/v1', '/toggle', [
+      'methods'  => 'POST',
+      'callback' => [$this, 'rest_toggle_availability'],
+      'permission_callback' => function () {
+        return is_user_logged_in();
+      },
+    ]);
   }
 
   public function rest_permission(\WP_REST_Request $request) {
@@ -49,7 +56,7 @@ class Helwacht_Availability {
       $key = $request->get_param('key');
     }
 
-    return is_string($stored) && $stored !== '' && hash_equals($stored, (string)$key);
+    return is_string($stored) && $stored !== '' && hash_equals($stored, (string) $key);
   }
 
   public function rest_get_availability(\WP_REST_Request $request) {
@@ -68,21 +75,21 @@ class Helwacht_Availability {
       $country     = 'Österreich';
 
       $available[] = [
-        'innung_name'        => $this->get_innung_name($u->ID, $u->display_name),
-        'phone'              => $this->format_phone_international(get_user_meta($u->ID, self::META_PHONE, true)),
-        'first_name'         => get_user_meta($u->ID, 'first_name', true),
-        'last_name'          => get_user_meta($u->ID, 'last_name', true),
-        'address'            => $address,
-        'postal_code'        => $postal_code,
-        'city'               => $city,
-        'country'            => $country,
-        'full_address'       => $this->build_full_address($address, $postal_code, $city, $country),
-        'email'              => $u->user_email,
-        'website'            => get_user_meta($u->ID, self::META_WEBSITE, true),
-        'available'          => true,
-        'last_update'        => get_user_meta($u->ID, self::META_LASTUPDATE, true),
-        'innung_id'          => (string) $u->ID,
+        'innung_id'              => (string) $u->ID,
+        'innung_name'            => $this->get_innung_name($u->ID, $u->display_name),
         'innung_billing_address' => $this->build_innung_billing_address($u->ID),
+        'phone'                  => $this->format_phone_international(get_user_meta($u->ID, self::META_PHONE, true)),
+        'first_name'             => get_user_meta($u->ID, 'first_name', true),
+        'last_name'              => get_user_meta($u->ID, 'last_name', true),
+        'address'                => $address,
+        'postal_code'            => $postal_code,
+        'city'                   => $city,
+        'country'                => $country,
+        'full_address'           => $this->build_full_address($address, $postal_code, $city, $country),
+        'email'                  => $u->user_email,
+        'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
+        'available'              => true,
+        'last_update'            => get_user_meta($u->ID, self::META_LASTUPDATE, true),
       ];
     }
 
@@ -91,6 +98,40 @@ class Helwacht_Availability {
       'count'        => count($available),
       'data'         => $available,
     ];
+  }
+
+  public function rest_toggle_availability(\WP_REST_Request $request) {
+    $uid = get_current_user_id();
+
+    if (!$uid) {
+      return new \WP_REST_Response([
+        'success' => false,
+        'data'    => ['message' => 'Not logged in'],
+      ], 401);
+    }
+
+    try {
+      $current = get_user_meta($uid, self::META_AVAILABLE, true) === '1';
+      $new = $current ? '0' : '1';
+
+      update_user_meta($uid, self::META_AVAILABLE, $new);
+      update_user_meta($uid, self::META_LASTUPDATE, current_time('c'));
+
+      return new \WP_REST_Response([
+        'success' => true,
+        'data'    => [
+          'available'   => $new === '1',
+          'last_update' => get_user_meta($uid, self::META_LASTUPDATE, true),
+        ],
+      ], 200);
+    } catch (\Throwable $e) {
+      return new \WP_REST_Response([
+        'success' => false,
+        'data'    => [
+          'message' => $e->getMessage(),
+        ],
+      ], 500);
+    }
   }
 
   private function get_innung_name($user_id, $fallback = '') {
@@ -120,7 +161,7 @@ class Helwacht_Availability {
       return $manual;
     }
 
-        $address     = trim((string) get_user_meta($user_id, self::META_ADDRESS, true));
+    $address     = trim((string) get_user_meta($user_id, self::META_ADDRESS, true));
     $postal_code = trim((string) get_user_meta($user_id, self::META_POSTAL_CODE, true));
     $city        = trim((string) get_user_meta($user_id, self::META_CITY, true));
     $country     = 'Österreich';
@@ -188,7 +229,7 @@ class Helwacht_Availability {
 
     $uid = get_current_user_id();
     $current = get_user_meta($uid, self::META_AVAILABLE, true) === '1';
-    $nonce = wp_create_nonce('helwacht_toggle_nonce');
+    $nonce = wp_create_nonce('wp_rest');
 
     ob_start(); ?>
       <div style="display:flex;justify-content:center;">
@@ -235,60 +276,61 @@ class Helwacht_Availability {
           const slider = document.getElementById('hw-slider');
           const knob = document.getElementById('hw-knob');
 
+          if (!checkbox || !status || !msg || !slider || !knob) {
+            return;
+          }
+
           checkbox.addEventListener('change', async () => {
             msg.textContent = 'Speichere...';
 
-            const form = new FormData();
-            form.append('action', 'helwacht_set_availability');
-            form.append('nonce', '<?php echo esc_js($nonce); ?>');
+            const previousChecked = !checkbox.checked;
 
             try {
-              const res = await fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', {
+              const res = await fetch('<?php echo esc_url(rest_url('helwacht/v1/toggle')); ?>', {
                 method: 'POST',
                 credentials: 'same-origin',
-                body: form
+                headers: {
+                  'Accept': 'application/json',
+                  'X-WP-Nonce': '<?php echo esc_js($nonce); ?>'
+                },
+                body: ''
               });
 
-              const data = await res.json();
-              if (!data.success) throw new Error(data.data || 'Fehler');
+              const raw = await res.text();
+              let data;
+
+              try {
+                data = JSON.parse(raw);
+              } catch (parseError) {
+                throw new Error('Server liefert kein JSON (HTTP ' + res.status + ', URL: ' + res.url + '). Antwort beginnt mit: ' + raw.slice(0, 120));
+              }
+
+              if (!res.ok) {
+                throw new Error((data && data.data && (data.data.message || data.data)) || ('HTTP ' + res.status));
+              }
+
+              if (!data.success) {
+                throw new Error((data.data && (data.data.message || data.data)) || 'Fehler');
+              }
 
               const available = !!data.data.available;
 
               status.textContent = available ? 'Verfügbar' : 'Nicht verfügbar';
-
               slider.style.backgroundColor = available ? '#4CAF50' : '#ccc';
               knob.style.transform = available ? 'translateX(26px)' : 'translateX(0)';
-
               msg.textContent = 'Gespeichert (' + data.data.last_update + ')';
             } catch (e) {
+              checkbox.checked = previousChecked;
+              status.textContent = previousChecked ? 'Verfügbar' : 'Nicht verfügbar';
+              slider.style.backgroundColor = previousChecked ? '#4CAF50' : '#ccc';
+              knob.style.transform = previousChecked ? 'translateX(26px)' : 'translateX(0)';
               msg.textContent = 'Fehler: ' + e.message;
-              checkbox.checked = !checkbox.checked;
             }
           });
         })();
       </script>
     <?php
     return ob_get_clean();
-  }
-
-  public function ajax_set_availability() {
-    if (!is_user_logged_in()) {
-      wp_send_json_error('Not logged in', 401);
-    }
-
-    check_ajax_referer('helwacht_toggle_nonce', 'nonce');
-
-    $uid = get_current_user_id();
-    $current = get_user_meta($uid, self::META_AVAILABLE, true) === '1';
-    $new = $current ? '0' : '1';
-
-    update_user_meta($uid, self::META_AVAILABLE, $new);
-    update_user_meta($uid, self::META_LASTUPDATE, current_time('c'));
-
-    wp_send_json_success([
-      'available'   => $new === '1',
-      'last_update' => get_user_meta($uid, self::META_LASTUPDATE, true),
-    ]);
   }
 }
 
@@ -376,7 +418,7 @@ function helwacht_save_user_fields($user_id) {
     return false;
   }
 
-    $innung_name = sanitize_text_field($_POST['innung_name'] ?? '');
+  $innung_name = sanitize_text_field($_POST['innung_name'] ?? '');
   update_user_meta($user_id, 'innung_name', $innung_name);
   update_user_meta($user_id, 'company', $innung_name);
   update_user_meta($user_id, 'phone', sanitize_text_field($_POST['phone'] ?? ''));
