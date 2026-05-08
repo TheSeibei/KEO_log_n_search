@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.2.2
+ * Version: 0.2.4
  */
 
 if (!defined('ABSPATH')) exit;
@@ -37,12 +37,6 @@ class Helwacht_Availability {
       'methods'  => ['GET', 'POST'],
       'callback' => [$this, 'rest_get_availability'],
       'permission_callback' => [$this, 'rest_permission'],
-      'args' => [
-        'postal_code' => [
-          'required' => false,
-          'sanitize_callback' => 'sanitize_text_field',
-        ],
-      ],
     ]);
 
     register_rest_route('helwacht/v1', '/toggle', [
@@ -66,77 +60,204 @@ class Helwacht_Availability {
   }
 
   public function rest_get_availability(\WP_REST_Request $request) {
-    $postal_code_filter = $this->get_postal_code_filter($request);
+    $filters = $this->get_filters($request);
+    $user_query_filters = $this->get_user_query_filters($filters);
+
+    $args = [
+      'fields' => ['ID', 'display_name', 'user_email'],
+    ];
 
     $meta_query = [
+      'relation' => 'AND',
       [
         'key'   => self::META_AVAILABLE,
         'value' => '1',
       ],
     ];
 
-    if ($postal_code_filter !== '') {
-      $meta_query[] = [
-        'key'     => self::META_POSTAL_CODE,
-        'value'   => $postal_code_filter,
-        'compare' => '=',
-      ];
+    foreach ($user_query_filters['meta'] as $filter) {
+      $meta_query[] = $filter;
     }
 
-    $users = get_users([
-      'meta_query' => $meta_query,
-      'fields'     => ['ID', 'display_name', 'user_email'],
-    ]);
+    $args['meta_query'] = $meta_query;
 
+    if (!empty($user_query_filters['search'])) {
+      $args['search'] = '*' . esc_attr($user_query_filters['search']) . '*';
+      $args['search_columns'] = ['user_email', 'display_name'];
+    }
+
+    $users = get_users($args);
     $available = [];
 
     foreach ($users as $u) {
-      $address     = get_user_meta($u->ID, self::META_ADDRESS, true);
-      $postal_code = get_user_meta($u->ID, self::META_POSTAL_CODE, true);
-      $city        = get_user_meta($u->ID, self::META_CITY, true);
-      $country     = 'Österreich';
+      $record = $this->build_availability_record($u);
 
-      $available[] = [
-        'innung_id'              => (string) $u->ID,
-        'innung_name'            => $this->get_innung_name($u->ID, $u->display_name),
-        'innung_billing_address' => $this->build_innung_billing_address($u->ID),
-        'phone'                  => $this->format_phone_international(get_user_meta($u->ID, self::META_PHONE, true)),
-        'first_name'             => get_user_meta($u->ID, 'first_name', true),
-        'last_name'              => get_user_meta($u->ID, 'last_name', true),
-        'address'                => $address,
-        'postal_code'            => $postal_code,
-        'city'                   => $city,
-        'country'                => $country,
-        'full_address'           => $this->build_full_address($address, $postal_code, $city, $country),
-        'email'                  => $u->user_email,
-        'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
-        'available'              => true,
-        'last_update'            => get_user_meta($u->ID, self::META_LASTUPDATE, true),
-      ];
+      if (!$this->record_matches_filters($record, $filters)) {
+        continue;
+      }
+
+      $available[] = $record;
     }
 
     return [
-      'generated_at'        => current_time('c'),
-      'count'               => count($available),
-      'postal_code_filter'  => $postal_code_filter !== '' ? $postal_code_filter : null,
-      'data'                => $available,
+      'generated_at' => current_time('c'),
+      'count'        => count($available),
+      'filters'      => !empty($filters) ? $filters : null,
+      'data'         => $available,
     ];
   }
 
-  private function get_postal_code_filter(\WP_REST_Request $request) {
-    $postal_code = $request->get_param('postal_code');
+  private function build_availability_record($u) {
+    $address     = get_user_meta($u->ID, self::META_ADDRESS, true);
+    $postal_code = get_user_meta($u->ID, self::META_POSTAL_CODE, true);
+    $city        = get_user_meta($u->ID, self::META_CITY, true);
+    $country     = 'Österreich';
 
-    if ($postal_code === null || $postal_code === '') {
-      $json = $request->get_json_params();
-      if (is_array($json) && isset($json['postal_code'])) {
-        $postal_code = $json['postal_code'];
+    return [
+      'innung_id'              => (string) $u->ID,
+      'innung_name'            => $this->get_innung_name($u->ID, $u->display_name),
+      'innung_billing_address' => $this->build_innung_billing_address($u->ID),
+      'phone'                  => $this->format_phone_international(get_user_meta($u->ID, self::META_PHONE, true)),
+      'first_name'             => get_user_meta($u->ID, 'first_name', true),
+      'last_name'              => get_user_meta($u->ID, 'last_name', true),
+      'address'                => $address,
+      'postal_code'            => $postal_code,
+      'city'                   => $city,
+      'country'                => $country,
+      'full_address'           => $this->build_full_address($address, $postal_code, $city, $country),
+      'email'                  => $u->user_email,
+      'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
+      'available'              => true,
+      'last_update'            => get_user_meta($u->ID, self::META_LASTUPDATE, true),
+    ];
+  }
+
+  private function get_filterable_fields() {
+    return [
+      'innung_id',
+      'innung_name',
+      'innung_billing_address',
+      'phone',
+      'first_name',
+      'last_name',
+      'address',
+      'postal_code',
+      'city',
+      'country',
+      'full_address',
+      'email',
+      'website',
+      'available',
+      'last_update',
+    ];
+  }
+
+  private function get_filters($request) {
+    $filters = [];
+    $json = $request->get_json_params();
+
+    if (!is_array($json)) {
+      $json = [];
+    }
+
+    // Fallback für curl -d '{"postal_code":"1120"}' ohne Content-Type: application/json.
+    $raw_body = trim((string) $request->get_body());
+    if (empty($json) && $raw_body !== '' && strpos($raw_body, '{') === 0) {
+      $decoded = json_decode($raw_body, true);
+      if (is_array($decoded)) {
+        $json = $decoded;
       }
     }
 
-    $postal_code = sanitize_text_field((string) $postal_code);
-    $postal_code = preg_replace('/[^0-9A-Za-z\- ]/', '', $postal_code);
+    foreach ($this->get_filterable_fields() as $field) {
+      $value = $request->get_param($field);
 
-    return trim($postal_code);
+      if (($value === null || $value === '') && array_key_exists($field, $json)) {
+        $value = $json[$field];
+      }
+
+      if ($value === null || $value === '') {
+        continue;
+      }
+
+      $filters[$field] = $this->sanitize_filter_value($value);
+    }
+
+    return $filters;
+  }
+
+  private function sanitize_filter_value($value) {
+    if (is_bool($value)) {
+      return $value ? 'true' : 'false';
+    }
+
+    if (is_array($value)) {
+      $value = reset($value);
+    }
+
+    return trim(sanitize_text_field((string) $value));
+  }
+
+  private function get_user_query_filters($filters) {
+    $meta_map = [
+      'innung_name'            => self::META_INNUNG_NAME,
+      'phone'                  => self::META_PHONE,
+      'first_name'             => 'first_name',
+      'last_name'              => 'last_name',
+      'address'                => self::META_ADDRESS,
+      'postal_code'            => self::META_POSTAL_CODE,
+      'city'                   => self::META_CITY,
+      'website'                => self::META_WEBSITE,
+      'last_update'            => self::META_LASTUPDATE,
+      'innung_billing_address' => self::META_INNUNG_ADDRESS,
+    ];
+
+    $query_filters = [
+      'meta'   => [],
+      'search' => '',
+    ];
+
+    foreach ($meta_map as $field => $meta_key) {
+      if (!isset($filters[$field])) {
+        continue;
+      }
+
+      $query_filters['meta'][] = [
+        'key'     => $meta_key,
+        'value'   => $filters[$field],
+        'compare' => 'LIKE',
+      ];
+    }
+
+    if (isset($filters['email'])) {
+      $query_filters['search'] = $filters['email'];
+    }
+
+    return $query_filters;
+  }
+
+  private function record_matches_filters($record, $filters) {
+    foreach ($filters as $field => $expected) {
+      if (!array_key_exists($field, $record)) {
+        return false;
+      }
+
+      $actual = $record[$field];
+
+      if (is_bool($actual)) {
+        $expected_bool = filter_var($expected, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($expected_bool === null || $actual !== $expected_bool) {
+          return false;
+        }
+        continue;
+      }
+
+      if (stripos((string) $actual, (string) $expected) === false) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   public function rest_toggle_availability(\WP_REST_Request $request) {
