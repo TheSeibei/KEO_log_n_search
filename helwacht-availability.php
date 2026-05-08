@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.2.1
+ * Version: 0.2.2
  */
 
 if (!defined('ABSPATH')) exit;
@@ -34,9 +34,15 @@ class Helwacht_Availability {
 
   public function register_routes() {
     register_rest_route('helwacht/v1', '/availability', [
-      'methods'  => 'GET',
+      'methods'  => ['GET', 'POST'],
       'callback' => [$this, 'rest_get_availability'],
       'permission_callback' => [$this, 'rest_permission'],
+      'args' => [
+        'postal_code' => [
+          'required' => false,
+          'sanitize_callback' => 'sanitize_text_field',
+        ],
+      ],
     ]);
 
     register_rest_route('helwacht/v1', '/toggle', [
@@ -60,9 +66,25 @@ class Helwacht_Availability {
   }
 
   public function rest_get_availability(\WP_REST_Request $request) {
+    $postal_code_filter = $this->get_postal_code_filter($request);
+
+    $meta_query = [
+      [
+        'key'   => self::META_AVAILABLE,
+        'value' => '1',
+      ],
+    ];
+
+    if ($postal_code_filter !== '') {
+      $meta_query[] = [
+        'key'     => self::META_POSTAL_CODE,
+        'value'   => $postal_code_filter,
+        'compare' => '=',
+      ];
+    }
+
     $users = get_users([
-      'meta_key'   => self::META_AVAILABLE,
-      'meta_value' => '1',
+      'meta_query' => $meta_query,
       'fields'     => ['ID', 'display_name', 'user_email'],
     ]);
 
@@ -94,10 +116,27 @@ class Helwacht_Availability {
     }
 
     return [
-      'generated_at' => current_time('c'),
-      'count'        => count($available),
-      'data'         => $available,
+      'generated_at'        => current_time('c'),
+      'count'               => count($available),
+      'postal_code_filter'  => $postal_code_filter !== '' ? $postal_code_filter : null,
+      'data'                => $available,
     ];
+  }
+
+  private function get_postal_code_filter(\WP_REST_Request $request) {
+    $postal_code = $request->get_param('postal_code');
+
+    if ($postal_code === null || $postal_code === '') {
+      $json = $request->get_json_params();
+      if (is_array($json) && isset($json['postal_code'])) {
+        $postal_code = $json['postal_code'];
+      }
+    }
+
+    $postal_code = sanitize_text_field((string) $postal_code);
+    $postal_code = preg_replace('/[^0-9A-Za-z\- ]/', '', $postal_code);
+
+    return trim($postal_code);
   }
 
   public function rest_toggle_availability(\WP_REST_Request $request) {
