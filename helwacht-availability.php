@@ -406,7 +406,7 @@ class Helwacht_Availability {
               position:absolute;
               cursor:pointer;
               top:0;left:0;right:0;bottom:0;
-              background-color:<?php echo $current ? '#4CAF50' : '#ccc'; ?>;
+              background-color:<?php echo $current ? '#4CAF50' : 'var(--global-palette1)'; ?>;
               transition:.3s;
               border-radius:34px;
             " id="hw-slider"></span>
@@ -476,13 +476,13 @@ class Helwacht_Availability {
               const available = !!data.data.available;
 
               status.textContent = available ? 'Verfügbar' : 'Nicht verfügbar';
-              slider.style.backgroundColor = available ? '#4CAF50' : '#ccc';
+              slider.style.backgroundColor = available ? '#4CAF50' : 'var(--global-palette1)';
               knob.style.transform = available ? 'translateX(26px)' : 'translateX(0)';
               msg.textContent = 'Gespeichert (' + data.data.last_update + ')';
             } catch (e) {
               checkbox.checked = previousChecked;
               status.textContent = previousChecked ? 'Verfügbar' : 'Nicht verfügbar';
-              slider.style.backgroundColor = previousChecked ? '#4CAF50' : '#ccc';
+              slider.style.backgroundColor = previousChecked ? '#4CAF50' : 'var(--global-palette1)';
               knob.style.transform = previousChecked ? 'translateX(26px)' : 'translateX(0)';
               msg.textContent = 'Fehler: ' + e.message;
             }
