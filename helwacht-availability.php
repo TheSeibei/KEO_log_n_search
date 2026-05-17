@@ -396,7 +396,7 @@ class Helwacht_Availability {
         <div style="padding:20px;border:1px solid #ddd;border-radius:12px;max-width:420px;width:100%;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
           
           <p style="margin-bottom:20px;">
-            <strong>Aktuelle Verfügbarkeit:</strong><br>
+            <strong>Ihre aktuelle Verfügbarkeit:</strong><br>
             <span id="hw-status"><?php echo $current ? 'Verfügbar' : 'Nicht verfügbar'; ?></span>
           </p>
 
