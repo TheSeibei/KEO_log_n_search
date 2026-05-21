@@ -3,6 +3,7 @@
 - Mobile Layout verbessert
 - Wien-District-Dropdown + optionaler district Parameter pro Aussteller
 - Neuer optionaler Parameter pro Aussteller: district: 1..23
+- Neuer optionaler Parameter pro Aussteller: nick für Sortierung nach Personen-Nachname
 - Wenn im Bundesland-Filter "Wien" gewählt ist, erscheint zusätzlich ein Bezirks-Dropdown
 - Bezirksfilter: Alle / 01 ... 23
 - Filtert nur innerhalb von Wien; bei allen anderen Bundesländern ist der Dropdown ausgeblendet
@@ -810,6 +811,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/Schlosserei-Braun.jpg",
         name: "Schlosserei Christian Braun",
+        nick: "Braun",
         website: "https://www.schlosserei-braun.at",
         subtitle: "",
         badges: [1, 0, 1],
@@ -830,6 +832,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/white.jpg",
         name: "Aufsperrdienst Kauper",
+        nick: "Kauper",
         website: "https://www.kauper-aufsperrdienst.at",
         subtitle: "",
         badges: [1, 0, 0],
@@ -967,6 +970,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/cropped-Logo-Schluesseldienst-Wien-Aufsperrer.png.webp",
         name: "Der Aufsperrer",
+        nick: "Aufsperrer",
         website: "https://www.deraufsperrer.wien",
         subtitle: "Jusupov Eduard",
         badges: [1, 0, 0],
@@ -1003,6 +1007,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/jurkin.webp",
         name: "Josef Jurkin Aufsperrdienst GmbH",
+        nick: "Jurkin",
         website: "https://www.jurkin.at",
         subtitle: "Aufsperrdienst",
         badges: [1, 0, 0],
@@ -1015,6 +1020,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/eisner.png",
         name: "Schlosserei Eisner",
+        nick: "Eisner",
         website: "https://www.schlossereieisner.at",
         subtitle: "",
         badges: [1, 0, 0],
@@ -1108,6 +1114,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/petro.jpg",
         name: "Aufsperrdienst Petro",
+        nick: "Petro",
         website: "https://www.schluesseldienst-petro.at/",
         subtitle: "Petrovic Zoran",
         badges: [1, 0, 0],
@@ -1120,6 +1127,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/02/logo-von-aufsperrdienst-cb.png",
         name: "Aufsperrdienst CB",
+        nick: "CB",
         website: "https://www.aufsperrdienst-cb.at",
         subtitle: "Cengiz Bicakei",
         badges: [1, 0, 1],
@@ -1132,6 +1140,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/reuven-souleimanov.256x256.jpg",
         name: "Der Schlosser",
+        nick: "Schlosser",
         website: "http://derschlosser.at",
         subtitle: "Souleimanov Reuven",
         badges: [1, 0, 0],
@@ -1155,6 +1164,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/white.jpg",
         name: "Schlosserei Ospalski",
+        nick: "Ospalski",
         website: "https://www.ospalski.com",
         subtitle: "Ospalski Ralf",
         badges: [1, 0, 0],
@@ -1165,6 +1175,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/pehofer.jpg",
         name: "Aufsperrdienst Thomas Pehofer",
+        nick: "Pehofer",
         website: "https://www.schluesseldienst-pehofer.at",
         subtitle: "Aufsperrdienst",
         badges: [1, 0, 0],
@@ -1231,6 +1242,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/esen.png",
         name: "Sicherheitstechnik Esen",
+        nick: "Esen",
         website: "https://esen-sicherheitstechnik.at",
         subtitle: "",
         badges: [1, 0, 0],
@@ -1241,6 +1253,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/04/koch.jpg",
         name: "Schlüssel Koch GmbH",
+        nick: "Koch",
         website: "https://www.schluessel-koch.at",
         subtitle: "Koch Günter",
         badges: [1, 0, 0],
@@ -1272,6 +1285,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/winzer.png",
         name: "Schlüsselzentrale Winzer",
+        nick: "Winzer",
         website: "https://schluesselzentrale.at",
         subtitle: "",
         badges: [1, 0, 0],
@@ -1282,6 +1296,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/lugstein.png",
         name: "Schlüsseldienst Lugstein GmbH",
+        nick: "Lugstein",
         website: "https://www.schluesseldienst-held.at/schluesseldienst-hans-lugstein-gmbh",
         subtitle: "Hans Lugstein",
         badges: [1, 0, 0],
@@ -1313,6 +1328,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/rosenauer.png",
         name: "Sicherheitstechnik Rosenauer",
+        nick: "Rosenauer",
         website: "https://www.ro-key1.at",
         subtitle: "",
         badges: [1, 0, 0],
@@ -1356,6 +1372,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/walcher.png",
         name: "Schlosserei Walcher",
+        nick: "Walcher",
         website: "https://www.schlosserei-walcher.at",
         subtitle: "Walcher Andreas",
         badges: [1, 0, 0],
@@ -1423,6 +1440,7 @@
       {
         logo: "http://keo.at/wp-content/uploads/2026/01/pollmann.jpg",
         name: "Manfred Pöllmann GmbH",
+        nick: "Pöllmann",
         website: "https://poellmann.info",
         subtitle: "Manfred Pöllmann",
         badges: [1, 1, 0],
@@ -1575,6 +1593,10 @@
       if (!phone) return null;
       const p = String(phone).trim();
       return p.length ? p : null;
+    }
+
+    function sortKey(exhibitor) {
+      return String(exhibitor.nick || exhibitor.name || "").trim();
     }
 
     function setActiveBundesland(blOrAll) {
@@ -1860,7 +1882,7 @@
       const filtered = exhibitors
         .filter(e => {
           const okLetter = filterLetter
-            ? e.name.toUpperCase().startsWith(filterLetter.toUpperCase())
+            ? sortKey(e).toUpperCase().startsWith(filterLetter.toUpperCase())
             : true;
 
           const blValue = Number.isInteger(e.bundesland) ? e.bundesland : 0;
@@ -1879,7 +1901,11 @@
           return okLetter && okBundesland && okDistrict && okLanguage;
         })
         .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+        .sort((a, b) => {
+          const cmp = sortKey(a).localeCompare(sortKey(b), "de", { sensitivity: "base" });
+          if (cmp !== 0) return cmp;
+          return String(a.name).localeCompare(String(b.name), "de", { sensitivity: "base" });
+        });
 
       const grid = document.createElement("div");
       grid.className = "exhibitor-grid";
@@ -1940,4 +1966,3 @@
     displayExhibitors(null);
   });
 </script>
-
