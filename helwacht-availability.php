@@ -2,22 +2,31 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.2.4
+ * Version: 0.3.0
  */
 
 if (!defined('ABSPATH')) exit;
 
 class Helwacht_Availability {
-  const META_AVAILABLE      = 'helwacht_available';
-  const META_INNUNG_NAME    = 'innung_name';
-  const META_PHONE          = 'phone';
-  const META_POSTAL_CODE    = 'postal_code';
-  const META_CITY           = 'city';
-  const META_ADDRESS        = 'address';
-  const META_WEBSITE        = 'website';
-  const META_LASTUPDATE     = 'last_update';
-  const META_INNUNG_ADDRESS = 'innung_address';
-  const OPTION_API_KEY      = 'helwacht_api_key';
+  const META_AVAILABLE           = 'helwacht_available';
+  const META_INNUNG_NAME         = 'innung_name';
+  const META_PHONE               = 'phone';
+  const META_POSTAL_CODE         = 'postal_code';
+  const META_CITY                = 'city';
+  const META_ADDRESS             = 'address';
+  const META_WEBSITE             = 'website';
+  const META_LASTUPDATE          = 'last_update';
+  const META_INNUNG_ADDRESS      = 'innung_address';
+  const META_LATITUDE            = 'helwacht_latitude';
+  const META_LONGITUDE           = 'helwacht_longitude';
+  const META_GEOCODED_AT         = 'helwacht_geocoded_at';
+  const META_GEOCODED_HASH       = 'helwacht_geocoded_hash';
+  const META_GEOCODED_SOURCE     = 'helwacht_geocoded_source';
+  const OPTION_API_KEY           = 'helwacht_api_key';
+  const OPTION_MAPBOX_TOKEN      = 'helwacht_mapbox_token';
+  const DEFAULT_COUNTRY          = 'Österreich';
+  const DEFAULT_COUNTRY_CODE     = 'at';
+  const MAX_QUERY_LENGTH        = 200;
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
@@ -61,6 +70,7 @@ class Helwacht_Availability {
 
   public function rest_get_availability(\WP_REST_Request $request) {
     $filters = $this->get_filters($request);
+    $search_query = $this->get_search_query($request);
     $user_query_filters = $this->get_user_query_filters($filters);
 
     $args = [
@@ -88,9 +98,21 @@ class Helwacht_Availability {
 
     $users = get_users($args);
     $available = [];
+    $search_coordinates = null;
+
+    if ($search_query !== '') {
+      $search_coordinates = $this->geocode_address($search_query);
+
+      if (is_wp_error($search_coordinates)) {
+        return [
+          'code'    => 'helwacht_geocode_failed',
+          'message' => 'Adresse konnte nicht verarbeitet werden.',
+        ];
+      }
+    }
 
     foreach ($users as $u) {
-      $record = $this->build_availability_record($u);
+      $record = $this->build_availability_record($u, $search_coordinates);
 
       if (!$this->record_matches_filters($record, $filters)) {
         continue;
@@ -99,21 +121,48 @@ class Helwacht_Availability {
       $available[] = $record;
     }
 
+    if ($search_coordinates) {
+      usort($available, function ($a, $b) {
+        $a_distance = array_key_exists('distance_km', $a) ? $a['distance_km'] : null;
+        $b_distance = array_key_exists('distance_km', $b) ? $b['distance_km'] : null;
+
+        if ($a_distance === null && $b_distance === null) {
+          return 0;
+        }
+
+        if ($a_distance === null) {
+          return 1;
+        }
+
+        if ($b_distance === null) {
+          return -1;
+        }
+
+        return $a_distance <=> $b_distance;
+      });
+    }
+
     return [
-      'generated_at' => current_time('c'),
-      'count'        => count($available),
-      'filters'      => !empty($filters) ? $filters : null,
-      'data'         => $available,
+      'generated_at'       => current_time('c'),
+      'count'              => count($available),
+      'filters'            => !empty($filters) ? $filters : null,
+      'query'              => $search_query !== '' ? $search_query : null,
+      'query_coordinates'  => $search_coordinates ? [
+        'latitude'  => $search_coordinates['latitude'],
+        'longitude' => $search_coordinates['longitude'],
+      ] : null,
+      'data'               => $available,
     ];
   }
 
-  private function build_availability_record($u) {
+  private function build_availability_record($u, $search_coordinates = null) {
     $address     = get_user_meta($u->ID, self::META_ADDRESS, true);
     $postal_code = get_user_meta($u->ID, self::META_POSTAL_CODE, true);
     $city        = get_user_meta($u->ID, self::META_CITY, true);
-    $country     = 'Österreich';
+    $country     = self::DEFAULT_COUNTRY;
+    $full_address = $this->build_full_address($address, $postal_code, $city, $country);
 
-    return [
+    $record = [
       'innung_id'              => (string) $u->ID,
       'innung_name'            => $this->get_innung_name($u->ID, $u->display_name),
       'innung_billing_address' => $this->build_innung_billing_address($u->ID),
@@ -124,12 +173,28 @@ class Helwacht_Availability {
       'postal_code'            => $postal_code,
       'city'                   => $city,
       'country'                => $country,
-      'full_address'           => $this->build_full_address($address, $postal_code, $city, $country),
-      'email'                  => $u->user_email,
-      'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
+      'full_address'           => $full_address,
+            'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
       'available'              => true,
       'last_update'            => get_user_meta($u->ID, self::META_LASTUPDATE, true),
     ];
+
+    if ($search_coordinates) {
+      $business_coordinates = $this->get_or_geocode_user_coordinates($u->ID, $full_address);
+
+      if (is_wp_error($business_coordinates)) {
+        $record['distance_km'] = null;
+      } else {
+        $record['distance_km'] = $this->calculate_distance_km(
+          $search_coordinates['latitude'],
+          $search_coordinates['longitude'],
+          $business_coordinates['latitude'],
+          $business_coordinates['longitude']
+        );
+      }
+    }
+
+    return $record;
   }
 
   private function get_filterable_fields() {
@@ -145,8 +210,7 @@ class Helwacht_Availability {
       'city',
       'country',
       'full_address',
-      'email',
-      'website',
+            'website',
       'available',
       'last_update',
     ];
@@ -160,7 +224,6 @@ class Helwacht_Availability {
       $json = [];
     }
 
-    // Fallback für curl -d '{"postal_code":"1120"}' ohne Content-Type: application/json.
     $raw_body = trim((string) $request->get_body());
     if (empty($json) && $raw_body !== '' && strpos($raw_body, '{') === 0) {
       $decoded = json_decode($raw_body, true);
@@ -184,6 +247,35 @@ class Helwacht_Availability {
     }
 
     return $filters;
+  }
+
+  private function get_search_query($request) {
+    $json = $request->get_json_params();
+    if (!is_array($json)) {
+      $json = [];
+    }
+
+    $value = $request->get_param('q');
+
+    if (($value === null || $value === '') && array_key_exists('q', $json)) {
+      $value = $json['q'];
+    }
+
+    if ($value === null) {
+      return '';
+    }
+
+    $value = trim(sanitize_text_field((string) $value));
+
+    if ($value === '') {
+      return '';
+    }
+
+    if (mb_strlen($value) > self::MAX_QUERY_LENGTH) {
+      return '';
+    }
+
+    return $value;
   }
 
   private function sanitize_filter_value($value) {
@@ -324,7 +416,7 @@ class Helwacht_Availability {
     $address     = trim((string) get_user_meta($user_id, self::META_ADDRESS, true));
     $postal_code = trim((string) get_user_meta($user_id, self::META_POSTAL_CODE, true));
     $city        = trim((string) get_user_meta($user_id, self::META_CITY, true));
-    $country     = 'Österreich';
+    $country     = self::DEFAULT_COUNTRY;
 
     $parts = array_filter([
       $address,
@@ -367,6 +459,122 @@ class Helwacht_Availability {
     }
 
     return $default_country_code . $digits;
+  }
+
+  private function get_mapbox_token() {
+    if (defined('HELWACHT_MAPBOX_TOKEN') && is_string(HELWACHT_MAPBOX_TOKEN) && trim(HELWACHT_MAPBOX_TOKEN) !== '') {
+      return trim(HELWACHT_MAPBOX_TOKEN);
+    }
+
+    $env_token = getenv('HELWACHT_MAPBOX_TOKEN');
+    if (is_string($env_token) && trim($env_token) !== '') {
+      return trim($env_token);
+    }
+
+    $token = get_option(self::OPTION_MAPBOX_TOKEN);
+    if (is_string($token) && trim($token) !== '') {
+      return trim($token);
+    }
+
+    return '';
+  }
+
+  private function geocode_address($address) {
+    $token = $this->get_mapbox_token();
+
+    if ($token === '') {
+      return new \WP_Error('helwacht_missing_mapbox_token', 'Mapbox token is missing.', ['status' => 500]);
+    }
+
+    $url = add_query_arg([
+      'access_token' => $token,
+      'limit'        => 1,
+      'country'      => self::DEFAULT_COUNTRY_CODE,
+      'autocomplete' => 'false',
+      'language'     => 'de',
+    ], 'https://api.mapbox.com/geocoding/v5/mapbox.places/' . rawurlencode($address) . '.json');
+
+    $response = wp_remote_get($url, [
+      'timeout' => 15,
+      'headers' => [
+        'Accept' => 'application/json',
+      ],
+    ]);
+
+    if (is_wp_error($response)) {
+      return new \WP_Error('helwacht_geocode_request_failed', $response->get_error_message(), ['status' => 502]);
+    }
+
+    $status_code = wp_remote_retrieve_response_code($response);
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+
+    if ($status_code < 200 || $status_code >= 300) {
+      $message = 'Mapbox geocoding failed.';
+      if (is_array($data) && !empty($data['message'])) {
+        $message = sanitize_text_field((string) $data['message']);
+      }
+
+      return new \WP_Error('helwacht_geocode_http_error', $message, ['status' => 502]);
+    }
+
+    if (!is_array($data) || empty($data['features'][0]['center']) || count($data['features'][0]['center']) < 2) {
+      return new \WP_Error('helwacht_geocode_no_result', 'Address could not be geocoded.', ['status' => 400]);
+    }
+
+    return [
+      'longitude' => (float) $data['features'][0]['center'][0],
+      'latitude'  => (float) $data['features'][0]['center'][1],
+    ];
+  }
+
+  private function get_or_geocode_user_coordinates($user_id, $full_address) {
+    $hash = md5($full_address);
+    $stored_hash = (string) get_user_meta($user_id, self::META_GEOCODED_HASH, true);
+    $stored_lat = get_user_meta($user_id, self::META_LATITUDE, true);
+    $stored_lng = get_user_meta($user_id, self::META_LONGITUDE, true);
+
+    if (
+      $stored_hash === $hash &&
+      $stored_lat !== '' &&
+      $stored_lng !== '' &&
+      is_numeric($stored_lat) &&
+      is_numeric($stored_lng)
+    ) {
+      return [
+        'latitude'  => (float) $stored_lat,
+        'longitude' => (float) $stored_lng,
+      ];
+    }
+
+    $coordinates = $this->geocode_address($full_address);
+
+    if (is_wp_error($coordinates)) {
+      return $coordinates;
+    }
+
+    update_user_meta($user_id, self::META_LATITUDE, $coordinates['latitude']);
+    update_user_meta($user_id, self::META_LONGITUDE, $coordinates['longitude']);
+    update_user_meta($user_id, self::META_GEOCODED_HASH, $hash);
+    update_user_meta($user_id, self::META_GEOCODED_AT, current_time('c'));
+    update_user_meta($user_id, self::META_GEOCODED_SOURCE, 'mapbox');
+
+    return $coordinates;
+  }
+
+  private function calculate_distance_km($lat1, $lng1, $lat2, $lng2) {
+    $earth_radius_km = 6371;
+
+    $d_lat = deg2rad($lat2 - $lat1);
+    $d_lng = deg2rad($lng2 - $lng1);
+
+    $a = sin($d_lat / 2) * sin($d_lat / 2)
+      + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+      * sin($d_lng / 2) * sin($d_lng / 2);
+
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+    return round($earth_radius_km * $c, 2);
   }
 
   public function shortcode_toggle() {
@@ -578,15 +786,31 @@ function helwacht_save_user_fields($user_id) {
     return false;
   }
 
+  $old_address = trim((string) get_user_meta($user_id, 'address', true));
+  $old_postal_code = trim((string) get_user_meta($user_id, 'postal_code', true));
+  $old_city = trim((string) get_user_meta($user_id, 'city', true));
+
   $innung_name = sanitize_text_field($_POST['innung_name'] ?? '');
+  $new_address = sanitize_text_field($_POST['address'] ?? '');
+  $new_postal_code = sanitize_text_field($_POST['postal_code'] ?? '');
+  $new_city = sanitize_text_field($_POST['city'] ?? '');
+
   update_user_meta($user_id, 'innung_name', $innung_name);
   update_user_meta($user_id, 'company', $innung_name);
   update_user_meta($user_id, 'phone', sanitize_text_field($_POST['phone'] ?? ''));
-  update_user_meta($user_id, 'address', sanitize_text_field($_POST['address'] ?? ''));
-  update_user_meta($user_id, 'postal_code', sanitize_text_field($_POST['postal_code'] ?? ''));
-  update_user_meta($user_id, 'city', sanitize_text_field($_POST['city'] ?? ''));
+  update_user_meta($user_id, 'address', $new_address);
+  update_user_meta($user_id, 'postal_code', $new_postal_code);
+  update_user_meta($user_id, 'city', $new_city);
   update_user_meta($user_id, 'website', esc_url_raw($_POST['website'] ?? ''));
   update_user_meta($user_id, 'innung_address', sanitize_text_field($_POST['innung_address'] ?? ''));
+
+  if ($old_address !== $new_address || $old_postal_code !== $new_postal_code || $old_city !== $new_city) {
+    delete_user_meta($user_id, 'helwacht_latitude');
+    delete_user_meta($user_id, 'helwacht_longitude');
+    delete_user_meta($user_id, 'helwacht_geocoded_at');
+    delete_user_meta($user_id, 'helwacht_geocoded_hash');
+    delete_user_meta($user_id, 'helwacht_geocoded_source');
+  }
 }
 
 new Helwacht_Availability();
