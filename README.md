@@ -293,7 +293,7 @@ Das Feld `email` wird nicht mehr ausgegeben.
 ## 1. Einfache Abfrage ohne Filter
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY
 ```
 
 Beispielantwort:
@@ -333,14 +333,14 @@ Beispielantwort:
 ### GET
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&postal_code=1120
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&postal_code=1120
 ```
 
 ### POST
 
 ```bash
 curl -X POST \
-  -H "X-API-KEY: DEIN_API_KEY" \
+  -H "X-API-KEY: API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"postal_code":"1120"}' \
   "https://keo.at/wp-json/helwacht/v1/availability"
@@ -351,7 +351,7 @@ curl -X POST \
 ## 3. Mehrere Filter kombiniert
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&postal_code=1120&city=Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&postal_code=1120&city=Wien
 ```
 
 Diese Anfrage liefert nur Einträge, die **beide Bedingungen** erfüllen.
@@ -361,7 +361,7 @@ Diese Anfrage liefert nur Einträge, die **beide Bedingungen** erfüllen.
 ## 4. Distanzsuche mit `q`
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&q=Stephansplatz%20Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&q=Stephansplatz%20Wien
 ```
 
 Beispielantwort:
@@ -420,7 +420,7 @@ Beispielantwort:
 ## 5. Filter und Distanzsuche kombiniert
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&city=Wien&q=Stephansplatz%20Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&city=Wien&q=Stephansplatz%20Wien
 ```
 
 Verhalten:
@@ -440,7 +440,7 @@ Beispiel:
 
 ```bash
 curl -X POST \
-  -H "X-API-KEY: DEIN_API_KEY" \
+  -H "X-API-KEY: API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "city": "Wien",
@@ -548,27 +548,27 @@ Beispiele:
 ### Ohne Distanzsuche
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY
 ```
 
 ### Mit Distanzsuche
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&q=Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&q=Wien
 ```
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&q=Stephansplatz%20Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&q=Stephansplatz%20Wien
 ```
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&q=Stra%C3%9Fe%20der%20Wiener%20Wirtschaft%201%201020%20Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&q=Stra%C3%9Fe%20der%20Wiener%20Wirtschaft%201%201020%20Wien
 ```
 
 ### Mit Filter und Distanzsuche
 
 ```text
-https://keo.at/wp-json/helwacht/v1/availability?key=DEIN_API_KEY&city=Wien&q=Stephansplatz%20Wien
+https://keo.at/wp-json/helwacht/v1/availability?key=API_KEY&city=Wien&q=Stephansplatz%20Wien
 ```
 
 ---
