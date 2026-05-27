@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.3.0
+ * Version: 0.3.1
  */
 
 if (!defined('ABSPATH')) exit;
