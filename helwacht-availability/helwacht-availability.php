@@ -814,3 +814,5 @@ function helwacht_save_user_fields($user_id) {
 }
 
 new Helwacht_Availability();
+
+require_once __DIR__ . '/import-betriebe.php';
