@@ -157,6 +157,49 @@ Wenn `q` gesetzt ist:
 
 ---
 
+## Rate Limiting
+
+Um Kosten durch API-Spam zu begrenzen, ist die Adresssuche per `q` mit einem Tageslimit geschützt.
+
+Das Limit gilt **ausschließlich für Requests mit `q`**, da nur diese ein kostenpflichtiges Geocoding auslösen. Normale Verfügbarkeitsabfragen ohne `q` sind nicht betroffen.
+
+### Limits
+
+| Typ | Limit |
+|-----|-------|
+| Pro IP | 100 Geocoding-Anfragen pro Tag |
+| Global (alle IPs) | 1.000 Geocoding-Anfragen pro Tag |
+
+Beide Zähler werden täglich zurückgesetzt.
+
+### Antwort bei überschrittenem Limit
+
+Bei Überschreitung antwortet die API mit HTTP **429**.
+
+**IP-Limit erreicht:**
+
+```json
+{
+  "code": "helwacht_rate_limited",
+  "message": "Reached daily limit for search queries. Try again later.",
+  "data": { "status": 429 }
+}
+```
+
+**Globales Limit erreicht:**
+
+```json
+{
+  "code": "helwacht_rate_limited_global",
+  "message": "Search is temporarily unavailable. Please try again later.",
+  "data": { "status": 429 }
+}
+```
+
+Requests ohne `q` laufen in beiden Fällen weiterhin durch.
+
+---
+
 ## Geocoding und Cache
 
 ### Suchadresse
@@ -456,6 +499,17 @@ Die API unterstützt außerdem einen Fallback für JSON-ähnliche Bodies, wenn k
 
 ## Fehlerverhalten
 
+### Tageslimit überschritten
+
+Wenn das IP-Limit oder das globale Tageslimit für Geocoding-Anfragen erreicht wurde, antwortet die API mit HTTP **429**.
+
+Die Unterscheidung zwischen IP-Limit und globalem Limit erfolgt über den `code`-Wert:
+
+* `helwacht_rate_limited` – das IP-Tageslimit wurde erreicht
+* `helwacht_rate_limited_global` – das globale Tageslimit wurde erreicht
+
+Requests ohne `q` sind vom Rate Limiting nicht betroffen.
+
 ### Ungültige oder nicht geocodierbare Suchadresse
 
 Wenn `q` nicht verarbeitet werden kann, wird ein neutraler Fehler zurückgegeben.
@@ -540,6 +594,8 @@ Beispiele:
 * `distance_km = null` bedeutet in der Regel, dass keine gültigen Koordinaten für die Betriebsadresse vorlagen.
 * Die erste Distanzsuche kann langsamer sein, weil Betriebskoordinaten erstmals gespeichert werden.
 * Folgeanfragen sind in der Regel schneller, weil der Koordinaten-Cache verwendet wird.
+* Requests mit `q` sind auf **100 pro IP und Tag** sowie **1.000 global pro Tag** limitiert.
+* Bei HTTP 429 gibt `code` Aufschluss, ob das IP-Limit (`helwacht_rate_limited`) oder das globale Limit (`helwacht_rate_limited_global`) erreicht wurde.
 
 ---
 
@@ -584,5 +640,6 @@ Die API kann derzeit:
 * Distanzen in km ausgeben
 * Betriebskoordinaten serverseitig cachen
 * den Cache bei Adressänderung automatisch invalidieren
+* Geocoding-Anfragen per IP und global täglich limitieren (Rate Limiting)
 
 Damit eignet sich die API sowohl für einfache Verfügbarkeitsabfragen als auch für standortbezogene Suchen nach dem nächstgelegenen Betrieb.
