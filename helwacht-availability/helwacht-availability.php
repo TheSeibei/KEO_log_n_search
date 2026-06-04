@@ -27,9 +27,9 @@ class Helwacht_Availability {
   const DEFAULT_COUNTRY          = 'Österreich';
   const DEFAULT_COUNTRY_CODE     = 'at';
   const MAX_QUERY_LENGTH        = 200;
-  // Rate Limiting fuer Geocoding (Schutz vor Mapbox-Kosten / API-Spam)
-  const RATE_LIMIT_IP_PER_DAY     = 100;   // max. Geocoding-Suchen pro IP pro Tag
-  const RATE_LIMIT_GLOBAL_PER_DAY = 1000;  // max. Geocoding-Suchen ueber alle IPs pro Tag
+  // Rate limiting for geocoding (protects against Mapbox costs / API spam)
+  const RATE_LIMIT_IP_PER_DAY     = 100;   // max geocoding searches per IP per day
+  const RATE_LIMIT_GLOBAL_PER_DAY = 1000;  // max geocoding searches across all IPs per day
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
@@ -104,8 +104,8 @@ class Helwacht_Availability {
     $search_coordinates = null;
 
     if ($search_query !== '') {
-      // Vor dem (kostenpflichtigen) Mapbox-Call die Limits pruefen.
-      // Es zaehlen nur Requests mit q, also nur die, die wirklich geocodiert werden.
+      // Check the limits before the (billable) Mapbox call.
+      // Only requests with q count, i.e. only those that are actually geocoded.
       $rate_limit_error = $this->enforce_geocode_rate_limit();
 
       if (is_wp_error($rate_limit_error)) {
@@ -491,15 +491,14 @@ class Helwacht_Availability {
   }
 
   /**
-   * Ermittelt die Client-IP fuer das Rate Limiting.
+   * Determines the client IP used for rate limiting.
    *
-   * Standard ist REMOTE_ADDR, weil dieser Wert nicht vom Client gefaelscht
-   * werden kann. Steht die Seite hinter einem vertrauenswuerdigen Proxy
-   * (z. B. Cloudflare), wuerde REMOTE_ADDR fuer alle Besucher gleich sein.
-   * In dem Fall kann per Konstante HELWACHT_TRUST_PROXY = true das erste
-   * (linkeste) X-Forwarded-For-IP verwendet werden. Nur aktivieren, wenn
-   * tatsaechlich ein Proxy davor haengt, sonst kann der Header gespooft
-   * werden und das IP-Limit umgangen werden.
+   * Defaults to REMOTE_ADDR, because that value cannot be spoofed by the
+   * client. If the site sits behind a trusted proxy (e.g. Cloudflare),
+   * REMOTE_ADDR would be the same for every visitor. In that case the
+   * constant HELWACHT_TRUST_PROXY = true makes it use the first (leftmost)
+   * X-Forwarded-For IP. Only enable this when a proxy is actually in front,
+   * otherwise the header can be spoofed and the per-IP limit bypassed.
    */
   private function get_client_ip() {
     if (defined('HELWACHT_TRUST_PROXY') && HELWACHT_TRUST_PROXY && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
@@ -517,19 +516,18 @@ class Helwacht_Availability {
   }
 
   /**
-   * Prueft das Tageslimit fuer Geocoding-Anfragen und zaehlt bei Erfolg hoch.
+   * Checks the daily limit for geocoding requests and increments on success.
    *
-   * - Pro IP:    RATE_LIMIT_IP_PER_DAY Anfragen pro Tag
-   * - Insgesamt: RATE_LIMIT_GLOBAL_PER_DAY Anfragen pro Tag (Schutznetz, da
-   *              Mapbox selbst kein Ausgabenlimit kennt)
+   * - Per IP:  RATE_LIMIT_IP_PER_DAY requests per day
+   * - Global:  RATE_LIMIT_GLOBAL_PER_DAY requests per day (safety net, since
+   *            Mapbox itself has no spending cap)
    *
-   * Gibt null zurueck, wenn der Request erlaubt ist, sonst ein WP_Error mit
-   * HTTP-Status 429. Die Zaehler liegen in Transients mit Tagesschluessel und
-   * laufen automatisch nach einem Tag ab (kein dauerhaftes Zumuellen der DB).
+   * Returns null when the request is allowed, otherwise a WP_Error with HTTP
+   * status 429. The counters live in transients with a per-day key and expire
+   * automatically after one day (no permanent bloating of the DB).
    *
-   * Hinweis: Transients sind nicht atomar. Bei sehr vielen gleichzeitigen
-   * Requests kann es zu minimalen Ungenauigkeiten kommen, was fuer reinen
-   * Kostenschutz aber unkritisch ist.
+   * Note: transients are not atomic. With many concurrent requests there can
+   * be minor inaccuracies, which is uncritical for pure cost protection.
    */
   private function enforce_geocode_rate_limit() {
     $day        = current_time('Ymd');
