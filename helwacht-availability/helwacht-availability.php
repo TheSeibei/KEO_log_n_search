@@ -28,7 +28,7 @@ class Helwacht_Availability {
   const DEFAULT_COUNTRY_CODE     = 'at';
   const MAX_QUERY_LENGTH        = 200;
   // Rate Limiting fuer Geocoding (Schutz vor Mapbox-Kosten / API-Spam)
-  const RATE_LIMIT_IP_PER_DAY     = 2;   // max. Geocoding-Suchen pro IP pro Tag
+  const RATE_LIMIT_IP_PER_DAY     = 100;   // max. Geocoding-Suchen pro IP pro Tag
   const RATE_LIMIT_GLOBAL_PER_DAY = 1000;  // max. Geocoding-Suchen ueber alle IPs pro Tag
 
   public function __construct() {
@@ -543,7 +543,7 @@ class Helwacht_Availability {
     if ($ip_count >= self::RATE_LIMIT_IP_PER_DAY) {
       return new \WP_Error(
         'helwacht_rate_limited',
-        'Tageslimit fuer Adresssuchen erreicht. Bitte spaeter erneut versuchen.',
+        'Reached daily limit for search queries. Try again later.',
         ['status' => 429]
       );
     }
@@ -551,7 +551,7 @@ class Helwacht_Availability {
     if ($global_count >= self::RATE_LIMIT_GLOBAL_PER_DAY) {
       return new \WP_Error(
         'helwacht_rate_limited_global',
-        'Adresssuche derzeit nicht verfuegbar. Bitte spaeter erneut versuchen.',
+        'Search is temporarily unavailable. Please try again later.',
         ['status' => 429]
       );
     }
