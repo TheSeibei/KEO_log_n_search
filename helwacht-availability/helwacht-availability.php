@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.3.3
+ * Version: 0.3.4
  */
 
 if (!defined('ABSPATH')) exit;
@@ -27,6 +27,9 @@ class Helwacht_Availability {
   const DEFAULT_COUNTRY          = 'Österreich';
   const DEFAULT_COUNTRY_CODE     = 'at';
   const MAX_QUERY_LENGTH        = 200;
+  // Rate Limiting fuer Geocoding (Schutz vor Mapbox-Kosten / API-Spam)
+  const RATE_LIMIT_IP_PER_DAY     = 100;   // max. Geocoding-Suchen pro IP pro Tag
+  const RATE_LIMIT_GLOBAL_PER_DAY = 1000;  // max. Geocoding-Suchen ueber alle IPs pro Tag
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
@@ -101,6 +104,14 @@ class Helwacht_Availability {
     $search_coordinates = null;
 
     if ($search_query !== '') {
+      // Vor dem (kostenpflichtigen) Mapbox-Call die Limits pruefen.
+      // Es zaehlen nur Requests mit q, also nur die, die wirklich geocodiert werden.
+      $rate_limit_error = $this->enforce_geocode_rate_limit();
+
+      if (is_wp_error($rate_limit_error)) {
+        return $rate_limit_error;
+      }
+
       $search_coordinates = $this->geocode_address($search_query);
 
       if (is_wp_error($search_coordinates)) {
@@ -479,6 +490,78 @@ class Helwacht_Availability {
     return '';
   }
 
+  /**
+   * Ermittelt die Client-IP fuer das Rate Limiting.
+   *
+   * Standard ist REMOTE_ADDR, weil dieser Wert nicht vom Client gefaelscht
+   * werden kann. Steht die Seite hinter einem vertrauenswuerdigen Proxy
+   * (z. B. Cloudflare), wuerde REMOTE_ADDR fuer alle Besucher gleich sein.
+   * In dem Fall kann per Konstante HELWACHT_TRUST_PROXY = true das erste
+   * (linkeste) X-Forwarded-For-IP verwendet werden. Nur aktivieren, wenn
+   * tatsaechlich ein Proxy davor haengt, sonst kann der Header gespooft
+   * werden und das IP-Limit umgangen werden.
+   */
+  private function get_client_ip() {
+    if (defined('HELWACHT_TRUST_PROXY') && HELWACHT_TRUST_PROXY && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+      $parts = explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']);
+      $candidate = trim($parts[0]);
+
+      if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+        return $candidate;
+      }
+    }
+
+    $remote = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+
+    return filter_var($remote, FILTER_VALIDATE_IP) ? $remote : 'unknown';
+  }
+
+  /**
+   * Prueft das Tageslimit fuer Geocoding-Anfragen und zaehlt bei Erfolg hoch.
+   *
+   * - Pro IP:    RATE_LIMIT_IP_PER_DAY Anfragen pro Tag
+   * - Insgesamt: RATE_LIMIT_GLOBAL_PER_DAY Anfragen pro Tag (Schutznetz, da
+   *              Mapbox selbst kein Ausgabenlimit kennt)
+   *
+   * Gibt null zurueck, wenn der Request erlaubt ist, sonst ein WP_Error mit
+   * HTTP-Status 429. Die Zaehler liegen in Transients mit Tagesschluessel und
+   * laufen automatisch nach einem Tag ab (kein dauerhaftes Zumuellen der DB).
+   *
+   * Hinweis: Transients sind nicht atomar. Bei sehr vielen gleichzeitigen
+   * Requests kann es zu minimalen Ungenauigkeiten kommen, was fuer reinen
+   * Kostenschutz aber unkritisch ist.
+   */
+  private function enforce_geocode_rate_limit() {
+    $day        = current_time('Ymd');
+    $ip         = $this->get_client_ip();
+    $ip_key     = 'helwacht_rl_ip_' . md5($ip) . '_' . $day;
+    $global_key = 'helwacht_rl_global_' . $day;
+
+    $ip_count     = (int) get_transient($ip_key);
+    $global_count = (int) get_transient($global_key);
+
+    if ($ip_count >= self::RATE_LIMIT_IP_PER_DAY) {
+      return new \WP_Error(
+        'helwacht_rate_limited',
+        'Tageslimit fuer Adresssuchen erreicht. Bitte spaeter erneut versuchen.',
+        ['status' => 429]
+      );
+    }
+
+    if ($global_count >= self::RATE_LIMIT_GLOBAL_PER_DAY) {
+      return new \WP_Error(
+        'helwacht_rate_limited_global',
+        'Adresssuche derzeit nicht verfuegbar. Bitte spaeter erneut versuchen.',
+        ['status' => 429]
+      );
+    }
+
+    set_transient($ip_key, $ip_count + 1, DAY_IN_SECONDS);
+    set_transient($global_key, $global_count + 1, DAY_IN_SECONDS);
+
+    return null;
+  }
+
   private function geocode_address($address) {
     $token = $this->get_mapbox_token();
 
@@ -815,4 +898,4 @@ function helwacht_save_user_fields($user_id) {
 
 new Helwacht_Availability();
 
-/* require_once __DIR__ . '/import-betriebe.php'; // import script */ 
+/* require_once __DIR__ . '/import-betriebe.php'; // import script */
