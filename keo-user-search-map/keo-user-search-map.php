@@ -285,7 +285,7 @@ class KEO_User_Search_Map {
       gap: 16px;
     }
     .hws-map {
-      height: 320px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
+      height: 350px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
     }
     /* Results as grid so all cards share equal height in the wide layout */
     .hws-results { display: grid; gap: 6px; }
@@ -310,7 +310,7 @@ class KEO_User_Search_Map {
     .hws-card {
       display: flex; align-items: flex-start; gap: 10px;
       padding: 8px 12px;
-      border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;
+      border: 3px solid #fff; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
     .hws-card:hover { border-color: var(--global-palette1); }
