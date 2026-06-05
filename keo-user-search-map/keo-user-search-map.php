@@ -310,7 +310,7 @@ class KEO_User_Search_Map {
     .hws-card {
       display: flex; align-items: flex-start; gap: 10px;
       padding: 8px 12px;
-      border: 3px solid #fff; border-radius: 8px; background: #fff;
+      border: 2px solid #fff; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
     .hws-card:hover { border-color: var(--global-palette1); }
