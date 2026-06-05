@@ -3,18 +3,18 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.2.0
+ * Version:     1.2.1
  */
 
 if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION                = '1.0.1';
-  const SUGGEST_RL_IP          = 300;    // max autocomplete requests per IP per day
-  const SUGGEST_RL_GLOBAL      = 3000;   // max autocomplete requests global per day
-  const SUGGEST_RL_GLOBAL_MONTHLY = 80000; // monthly hard cap (80k autocomplete + 20k geocoding = 100k Mapbox free tier)
-  const MAX_RESULTS       = 3;     // number of nearest businesses shown
+  const VERSION                = '1.2.1';
+  const SUGGEST_RL_IP          = 300;
+  const SUGGEST_RL_GLOBAL      = 3000;
+  const SUGGEST_RL_GLOBAL_MONTHLY = 80000;
+  const MAX_RESULTS            = 3;
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
@@ -22,56 +22,33 @@ class KEO_User_Search_Map {
     add_action('admin_menu', [$this, 'admin_menu']);
   }
 
-  // -------------------------------------------------------------------------
-  // Options — reads from the existing Helwacht Availability plugin options
-  // -------------------------------------------------------------------------
-
   private function get_mapbox_token() {
-    // Same lookup order as Helwacht_Availability::get_mapbox_token():
-    // 1. PHP constant  2. Environment variable  3. WP option
     if (defined('HELWACHT_MAPBOX_TOKEN') && is_string(HELWACHT_MAPBOX_TOKEN) && trim(HELWACHT_MAPBOX_TOKEN) !== '') {
       return trim(HELWACHT_MAPBOX_TOKEN);
     }
     $env = getenv('HELWACHT_MAPBOX_TOKEN');
-    if (is_string($env) && trim($env) !== '') {
-      return trim($env);
-    }
+    if (is_string($env) && trim($env) !== '') return trim($env);
     $token = get_option('helwacht_mapbox_token', '');
     return is_string($token) ? trim($token) : '';
   }
 
   private function get_api_key() {
-    // Same lookup order as above.
     if (defined('HELWACHT_API_KEY') && is_string(HELWACHT_API_KEY) && trim(HELWACHT_API_KEY) !== '') {
       return trim(HELWACHT_API_KEY);
     }
     $env = getenv('HELWACHT_API_KEY');
-    if (is_string($env) && trim($env) !== '') {
-      return trim($env);
-    }
+    if (is_string($env) && trim($env) !== '') return trim($env);
     $key = get_option('helwacht_api_key', '');
     return is_string($key) ? trim($key) : '';
   }
 
-  // -------------------------------------------------------------------------
-  // REST routes
-  // -------------------------------------------------------------------------
-
   public function register_routes() {
-    // Autocomplete suggestions (proxies Mapbox geocoding)
     register_rest_route('helwacht-search/v1', '/suggest', [
       'methods'             => 'GET',
       'callback'            => [$this, 'rest_suggest'],
       'permission_callback' => '__return_true',
-      'args'                => [
-        'q' => [
-          'required'          => true,
-          'sanitize_callback' => 'sanitize_text_field',
-        ],
-      ],
+      'args'                => ['q' => ['required' => true, 'sanitize_callback' => 'sanitize_text_field']],
     ]);
-
-    // Nearest businesses (proxies Helwacht Availability API internally)
     register_rest_route('helwacht-search/v1', '/nearby', [
       'methods'             => 'GET',
       'callback'            => [$this, 'rest_nearby'],
@@ -79,36 +56,18 @@ class KEO_User_Search_Map {
     ]);
   }
 
-  // -------------------------------------------------------------------------
-  // REST: /suggest
-  // -------------------------------------------------------------------------
-
   public function rest_suggest(\WP_REST_Request $request) {
     $q = trim((string) $request->get_param('q'));
-
     if ($q === '' || mb_strlen($q) > 200) {
-      return new \WP_Error(
-        'helwacht_search_invalid_query',
-        'Query must not be empty or exceed 200 characters.',
-        ['status' => 400]
-      );
+      return new \WP_Error('helwacht_search_invalid_query', 'Query must not be empty or exceed 200 characters.', ['status' => 400]);
     }
-
-    // Rate limiting — protects the Mapbox token from autocomplete abuse
     $limit_error = $this->check_rate_limit('suggest', self::SUGGEST_RL_IP, self::SUGGEST_RL_GLOBAL);
-    if (is_wp_error($limit_error)) {
-      return $limit_error;
-    }
+    if (is_wp_error($limit_error)) return $limit_error;
 
     $token = $this->get_mapbox_token();
     if ($token === '') {
-      return new \WP_Error(
-        'helwacht_search_no_token',
-        'Mapbox token is not configured.',
-        ['status' => 500]
-      );
+      return new \WP_Error('helwacht_search_no_token', 'Mapbox token is not configured.', ['status' => 500]);
     }
-
     $url = add_query_arg([
       'access_token' => $token,
       'autocomplete' => 'true',
@@ -118,276 +77,150 @@ class KEO_User_Search_Map {
     ], 'https://api.mapbox.com/geocoding/v5/mapbox.places/' . rawurlencode($q) . '.json');
 
     $response = wp_remote_get($url, ['timeout' => 10]);
-
     if (is_wp_error($response)) {
-      return new \WP_Error(
-        'helwacht_search_suggest_failed',
-        'Autocomplete request failed.',
-        ['status' => 502]
-      );
+      return new \WP_Error('helwacht_search_suggest_failed', 'Autocomplete request failed.', ['status' => 502]);
     }
-
     $data = json_decode(wp_remote_retrieve_body($response), true);
-
-    if (!is_array($data) || empty($data['features'])) {
-      return new \WP_REST_Response([], 200);
-    }
+    if (!is_array($data) || empty($data['features'])) return new \WP_REST_Response([], 200);
 
     $suggestions = [];
     foreach ($data['features'] as $feature) {
-      if (empty($feature['center']) || count($feature['center']) < 2) {
-        continue;
-      }
+      if (empty($feature['center']) || count($feature['center']) < 2) continue;
       $suggestions[] = [
         'label' => $feature['place_name'] ?? $feature['text'] ?? '',
         'lng'   => (float) $feature['center'][0],
         'lat'   => (float) $feature['center'][1],
       ];
     }
-
     return new \WP_REST_Response($suggestions, 200);
   }
-
-  // -------------------------------------------------------------------------
-  // REST: /nearby
-  // -------------------------------------------------------------------------
 
   public function rest_nearby(\WP_REST_Request $request) {
     $lat = $request->get_param('lat');
     $lng = $request->get_param('lng');
     $q   = trim((string) $request->get_param('q'));
-
     $has_coords = is_numeric($lat) && is_numeric($lng);
     $has_query  = $q !== '' && mb_strlen($q) <= 200;
 
     if (!$has_coords && !$has_query) {
-      return new \WP_Error(
-        'helwacht_search_missing_params',
-        'Provide either lat+lng or q.',
-        ['status' => 400]
-      );
+      return new \WP_Error('helwacht_search_missing_params', 'Provide either lat+lng or q.', ['status' => 400]);
     }
-
     $api_key = $this->get_api_key();
     if ($api_key === '') {
-      return new \WP_Error(
-        'helwacht_search_no_key',
-        'Helwacht API key is not configured.',
-        ['status' => 500]
-      );
+      return new \WP_Error('helwacht_search_no_key', 'Helwacht API key is not configured.', ['status' => 500]);
     }
-
-    // Internal REST call — no HTTP overhead, no external network request.
-    // Requires Helwacht Availability plugin to be active on the same installation.
     $api_request = new \WP_REST_Request('GET', '/helwacht/v1/availability');
     $api_request->set_param('key', $api_key);
-
     if ($has_coords) {
-      // Direct coordinates skip geocoding and rate limiting in the availability plugin.
       $api_request->set_param('lat', (float) $lat);
       $api_request->set_param('lng', (float) $lng);
     } else {
       $api_request->set_param('q', $q);
     }
-
     $api_response = rest_do_request($api_request);
     $data         = $api_response->get_data();
-
-    // Forward error responses from the availability plugin as-is
-    if ($api_response->get_status() >= 400) {
-      return new \WP_REST_Response($data, $api_response->get_status());
-    }
-
-    // Limit to MAX_RESULTS
+    if ($api_response->get_status() >= 400) return new \WP_REST_Response($data, $api_response->get_status());
     if (isset($data['data']) && is_array($data['data'])) {
       $data['data']  = array_slice($data['data'], 0, self::MAX_RESULTS);
       $data['count'] = count($data['data']);
     }
-
     return new \WP_REST_Response($data, 200);
   }
 
-  // -------------------------------------------------------------------------
-  // Rate limiting (same transient pattern as helwacht-availability)
-  // -------------------------------------------------------------------------
-
   private function get_client_ip() {
-    // See notes in helwacht-availability.php — HELWACHT_TRUST_PROXY also
-    // applies here for consistent IP detection behind a reverse proxy.
     if (defined('HELWACHT_TRUST_PROXY') && HELWACHT_TRUST_PROXY && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
       $parts     = explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']);
       $candidate = trim($parts[0]);
-      if (filter_var($candidate, FILTER_VALIDATE_IP)) {
-        return $candidate;
-      }
+      if (filter_var($candidate, FILTER_VALIDATE_IP)) return $candidate;
     }
-
     $remote = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
     return filter_var($remote, FILTER_VALIDATE_IP) ? $remote : 'unknown';
   }
 
   private function check_rate_limit($prefix, $ip_limit, $global_limit) {
-    $day        = current_time('Ymd');
-    $month      = current_time('Ym');
-    $ip         = $this->get_client_ip();
-    $ip_key       = 'hwsearch_rl_' . $prefix . '_ip_' . md5($ip) . '_' . $day;
-    $global_key   = 'hwsearch_rl_' . $prefix . '_global_' . $day;
-    $monthly_key  = 'hwsearch_rl_' . $prefix . '_global_monthly_' . $month;
+    $day         = current_time('Ymd');
+    $month       = current_time('Ym');
+    $ip          = $this->get_client_ip();
+    $ip_key      = 'hwsearch_rl_' . $prefix . '_ip_' . md5($ip) . '_' . $day;
+    $global_key  = 'hwsearch_rl_' . $prefix . '_global_' . $day;
+    $monthly_key = 'hwsearch_rl_' . $prefix . '_global_monthly_' . $month;
 
     $ip_count      = (int) get_transient($ip_key);
     $global_count  = (int) get_transient($global_key);
     $monthly_count = (int) get_transient($monthly_key);
 
     if ($ip_count >= $ip_limit) {
-      return new \WP_Error(
-        'helwacht_search_rate_limited',
-        'Reached daily limit. Try again later.',
-        ['status' => 429]
-      );
+      return new \WP_Error('helwacht_search_rate_limited', 'Reached daily limit. Try again later.', ['status' => 429]);
     }
-
     if ($global_count >= $global_limit) {
-      return new \WP_Error(
-        'helwacht_search_rate_limited_global',
-        'Service temporarily unavailable. Please try again later.',
-        ['status' => 429]
-      );
+      return new \WP_Error('helwacht_search_rate_limited_global', 'Service temporarily unavailable. Please try again later.', ['status' => 429]);
     }
-
     if ($monthly_count >= self::SUGGEST_RL_GLOBAL_MONTHLY) {
-      return new \WP_Error(
-        'helwacht_search_rate_limited_monthly',
-        'Service temporarily unavailable. Please try again later.',
-        ['status' => 429]
-      );
+      return new \WP_Error('helwacht_search_rate_limited_monthly', 'Service temporarily unavailable. Please try again later.', ['status' => 429]);
     }
-
     set_transient($ip_key, $ip_count + 1, DAY_IN_SECONDS);
     set_transient($global_key, $global_count + 1, DAY_IN_SECONDS);
     set_transient($monthly_key, $monthly_count + 1, 31 * DAY_IN_SECONDS);
-
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Admin status page (Settings > Helwacht Search)
-  // -------------------------------------------------------------------------
-
   public function admin_menu() {
-    add_options_page(
-      'Helwacht Search',
-      'Helwacht Search',
-      'manage_options',
-      'helwacht-search',
-      [$this, 'admin_page']
-    );
+    add_options_page('Helwacht Search', 'Helwacht Search', 'manage_options', 'helwacht-search', [$this, 'admin_page']);
   }
 
   public function admin_page() {
     $token = $this->get_mapbox_token();
     $key   = $this->get_api_key();
-
-    $ok  = '<span style="color:green;">✔ konfiguriert</span>';
-    $nok = '<span style="color:red;">✘ fehlt – bitte im Helwacht Availability Plugin eintragen</span>';
+    $ok    = '<span style="color:green;">✔ konfiguriert</span>';
+    $nok   = '<span style="color:red;">✘ fehlt – bitte im Helwacht Availability Plugin eintragen</span>';
     ?>
     <div class="wrap">
       <h1>Helwacht Search</h1>
       <p>Dieses Plugin liest die Einstellungen des <strong>Helwacht Availability</strong> Plugins.</p>
       <table class="widefat" style="max-width:600px;">
         <tbody>
-          <tr>
-            <th style="width:200px;">API-Key</th>
-            <td><?php echo $key   !== '' ? $ok : $nok; ?></td>
-          </tr>
-          <tr>
-            <th>Mapbox Token</th>
-            <td><?php echo $token !== '' ? $ok : $nok; ?></td>
-          </tr>
-          <tr>
-            <th>Shortcode</th>
-            <td><code>[helwacht_search]</code></td>
-          </tr>
-          <tr>
-            <th>Ergebnisse pro Suche</th>
-            <td>Die <?php echo self::MAX_RESULTS; ?> nächsten verfügbaren Betriebe</td>
-          </tr>
-          <tr>
-            <th>Autocomplete-Limit</th>
-            <td><?php echo self::SUGGEST_RL_IP; ?> pro IP / <?php echo self::SUGGEST_RL_GLOBAL; ?> global pro Tag</td>
-          </tr>
+          <tr><th style="width:200px;">API-Key</th><td><?php echo $key !== '' ? $ok : $nok; ?></td></tr>
+          <tr><th>Mapbox Token</th><td><?php echo $token !== '' ? $ok : $nok; ?></td></tr>
+          <tr><th>Shortcode</th><td><code>[helwacht_search]</code></td></tr>
+          <tr><th>Ergebnisse pro Suche</th><td>Die <?php echo self::MAX_RESULTS; ?> nächsten verfügbaren Betriebe</td></tr>
+          <tr><th>Autocomplete-Limit</th><td><?php echo self::SUGGEST_RL_IP; ?> pro IP / <?php echo self::SUGGEST_RL_GLOBAL; ?> global pro Tag</td></tr>
         </tbody>
       </table>
     </div>
     <?php
   }
 
-  // -------------------------------------------------------------------------
-  // Shortcode [helwacht_search]
-  // -------------------------------------------------------------------------
-
   public function shortcode() {
-    // Leaflet CSS + JS (OpenStreetMap tiles, no token required in the browser)
     if (!wp_style_is('leaflet', 'enqueued')) {
-      wp_enqueue_style(
-        'leaflet',
-        'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
-        [],
-        '1.9.4'
-      );
-      wp_enqueue_script(
-        'leaflet',
-        'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
-        [],
-        '1.9.4',
-        true // load in footer
-      );
+      wp_enqueue_style('leaflet', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', [], '1.9.4');
+      wp_enqueue_script('leaflet', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js', [], '1.9.4', true);
     }
 
-    // Unique IDs so multiple shortcodes on the same page don't conflict
-    $uid     = 'hws-' . wp_unique_id();
-    $map_id  = $uid . '-map';
-
+    $uid         = 'hws-' . wp_unique_id();
+    $map_id      = $uid . '-map';
     $suggest_url = esc_url(rest_url('helwacht-search/v1/suggest'));
     $nearby_url  = esc_url(rest_url('helwacht-search/v1/nearby'));
 
     ob_start();
     ?>
-
-    <!-- ------------------------------------------------------------------ -->
-    <!-- Widget markup                                                        -->
-    <!-- ------------------------------------------------------------------ -->
     <div id="<?php echo esc_attr($uid); ?>" class="hws-widget">
 
       <div class="hws-input-row">
         <div class="hws-input-wrap">
-          <input
-            type="text"
-            class="hws-input"
-            placeholder="Adresse eingeben …"
-            autocomplete="off"
-            aria-label="Adresse eingeben"
-            aria-autocomplete="list"
-          >
+          <input type="text" class="hws-input" placeholder="Adresse eingeben …"
+                 autocomplete="off" aria-label="Adresse eingeben" aria-autocomplete="list">
           <ul class="hws-suggestions" role="listbox" aria-label="Adressvorschläge" hidden></ul>
         </div>
-
         <button class="hws-search-btn" title="Adresse suchen" aria-label="Adresse suchen">
-          <!-- magnifier icon -->
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="8"/>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
         </button>
-
         <button class="hws-gps-btn" title="Aktuellen Standort verwenden" aria-label="Aktuellen Standort verwenden">
-          <!-- crosshair / location icon -->
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
           </svg>
         </button>
       </div>
@@ -401,233 +234,124 @@ class KEO_User_Search_Map {
 
     </div>
 
-    <!-- ------------------------------------------------------------------ -->
-    <!-- Scoped styles                                                        -->
-    <!-- ------------------------------------------------------------------ -->
     <style>
-    .hws-widget {
-      font-family: inherit;
-      width: 100%;
-    }
+    .hws-widget { font-family: inherit; width: 100%; }
 
-    /* --- Input row --- */
-    .hws-input-row {
-      display: flex;
-      gap: 8px;
-      align-items: stretch;
-    }
-    .hws-input-wrap {
-      position: relative;
-      flex: 1;
-    }
+    .hws-input-row { display: flex; gap: 8px; align-items: stretch; }
+    .hws-input-wrap { position: relative; flex: 1; }
     .hws-input {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 10px 14px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 16px;
-      font-family: inherit;
+      width: 100%; box-sizing: border-box; padding: 10px 14px;
+      border: 1px solid #ccc; border-radius: 6px; font-size: 16px; font-family: inherit;
       transition: border-color .2s, box-shadow .2s;
     }
-    .hws-input:focus {
-      outline: none;
-      border-color: var(--global-palette1);
-      box-shadow: 0 0 0 2px rgba(204,0,0,.12);
-    }
+    .hws-input:focus { outline: none; border-color: var(--global-palette1); box-shadow: 0 0 0 2px rgba(204,0,0,.12); }
 
-    /* --- Autocomplete dropdown --- */
     .hws-suggestions {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      z-index: 9999;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      background: #fff;
-      border: 1px solid #ccc;
-      border-top: none;
-      border-radius: 0 0 6px 6px;
-      box-shadow: 0 6px 16px rgba(0,0,0,.12);
-      overflow: hidden;
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 9999;
+      margin: 0; padding: 0; list-style: none;
+      background: #fff; border: 1px solid #ccc; border-top: none;
+      border-radius: 0 0 6px 6px; box-shadow: 0 6px 16px rgba(0,0,0,.12); overflow: hidden;
     }
     .hws-suggestions li {
-      padding: 10px 14px;
-      font-size: 14px;
-      line-height: 1.4;
-      cursor: pointer;
-      border-bottom: 1px solid #f0f0f0;
-      color: var(--global-palette8);
+      padding: 10px 14px; font-size: 14px; line-height: 1.4; cursor: pointer;
+      border-bottom: 1px solid #f0f0f0; color: var(--global-palette8);
     }
     .hws-suggestions li:last-child { border-bottom: none; }
-    .hws-suggestions li:hover,
-    .hws-suggestions li.hws-active { background: #f8f8f8; }
+    .hws-suggestions li:hover, .hws-suggestions li.hws-active { background: #f8f8f8; }
 
-    /* --- Buttons (search + GPS) --- */
-    .hws-search-btn,
-    .hws-gps-btn {
-      padding: 10px 13px;
-      background: var(--global-palette1);
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
+    .hws-search-btn, .hws-gps-btn {
+      padding: 10px 13px; background: var(--global-palette1); color: #fff;
+      border: none; border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
       transition: background .2s;
     }
-    .hws-search-btn:hover,
-    .hws-gps-btn:hover  { background: #aa0000; }
-    .hws-search-btn:focus,
-    .hws-gps-btn:focus  { outline: 2px solid var(--global-palette1); outline-offset: 2px; }
-    .hws-search-btn[disabled],
-    .hws-gps-btn[disabled] { opacity: .55; cursor: not-allowed; }
+    .hws-search-btn:hover, .hws-gps-btn:hover { background: #aa0000; }
+    .hws-search-btn:focus, .hws-gps-btn:focus { outline: 2px solid var(--global-palette1); outline-offset: 2px; }
+    .hws-search-btn[disabled], .hws-gps-btn[disabled] { opacity: .55; cursor: not-allowed; }
 
-    /* --- Status message --- */
     .hws-status {
-      margin: 8px 0 0;
-      padding: 10px 14px;
-      background: #f9f9f9;
-      border-left: 3px solid #ccc;
-      border-radius: 0 4px 4px 0;
-      font-size: 14px;
-      color: #555;
+      margin: 8px 0 0; padding: 10px 14px;
+      background: #f9f9f9; border-left: 3px solid #ccc; border-radius: 0 4px 4px 0;
+      font-size: 14px; color: #555;
     }
-    .hws-status.hws-error {
-      border-left-color: var(--global-palette1);
-      background: #fff5f5;
-      color: var(--global-palette1);
-    }
+    .hws-status.hws-error { border-left-color: var(--global-palette1); background: #fff5f5; color: var(--global-palette1); }
 
-    /* --- Content container ---
-       Default (initial / narrow): map full width, fixed height.
-       hws-has-results (wide): map 65% right, cards 35% left — only width changes, height stays fixed. */
-    .hws-content {
-      margin-top: 16px;
-    }
+    .hws-content { margin-top: 16px; }
     .hws-map {
-      height: 270px;
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid #e0e0e0;
+      height: 270px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
     }
     .hws-results { margin-top: 0; }
     .hws-results:empty { display: none; }
 
     @media (min-width: 640px) {
       .hws-content.hws-has-results {
-        display: flex;
-        flex-direction: row-reverse;
-        align-items: flex-start;
-        gap: 16px;
+        display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 16px;
       }
-      .hws-content.hws-has-results .hws-map {
-        flex: 0 0 65%;
-        /* height intentionally NOT overridden — stays 270px */
-      }
-      .hws-content.hws-has-results .hws-results {
-        flex: 0 0 calc(35% - 8px);
-      }
+      .hws-content.hws-has-results .hws-map { flex: 0 0 65%; }
+      .hws-content.hws-has-results .hws-results { flex: 0 0 calc(35% - 8px); }
     }
+
     .hws-card {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 6px 10px;
-      margin-bottom: 6px;
-      border: 3px solid #e0e0e0;
-      border-radius: 8px;
-      background: #fff;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 6px 10px; margin-bottom: 6px;
+      border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
     .hws-card:last-child { margin-bottom: 0; }
     .hws-card:hover { border-color: var(--global-palette1); }
-    .hws-card-num {
-      flex-shrink: 0;
-      width: 26px;
-      height: 26px;
-      background: var(--global-palette1);
-      color: #fff;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: bold;
-      margin-top: 1px;
-    }
-    .hws-card-body  { flex: 1; min-width: 0; line-height: 1.25; }
-    .hws-card-name  { margin: 0; font-weight: bold; font-size: 14px; color: var(--global-palette8); }
-    .hws-card-addr  { margin: 0; font-size: 12px; color: #555; }
-    .hws-card-phone { margin: 0; font-size: 12px; }
-    .hws-card-phone a,
-    .hws-card-site a {
-      color: var(--global-palette1);
-      text-decoration: none;
-    }
-    .hws-card-site  { margin: 0; font-size: 12px; }
-    .hws-card-dist {
-      flex-shrink: 0;
-      font-size: 12px;
-      font-weight: bold;
-      color: #555;
-      white-space: nowrap;
-      padding-top: 2px;
+
+    /* Reset theme paragraph margins inside cards — use !important to beat
+       theme rules like .entry-content p { margin-bottom: 1em } */
+    .hws-widget .hws-card p {
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
-    /* --- Leaflet marker overrides --- */
-    .hws-marker-search {
-      font-size: 24px;
-      line-height: 1;
-      filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
+    .hws-card-num {
+      flex-shrink: 0; width: 26px; height: 26px;
+      background: var(--global-palette1); color: #fff; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: bold; margin-top: 2px;
     }
+    .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; }
+    .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
+    .hws-card-addr { font-size: 12px; color: #555; }
+    .hws-card-phone { font-size: 12px; }
+    .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; }
+    .hws-card-site { font-size: 12px; }
+    .hws-card-dist {
+      flex-shrink: 0; font-size: 12px; font-weight: bold;
+      color: #555; white-space: nowrap; padding-top: 2px;
+    }
+
+    .hws-marker-search { font-size: 24px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3)); }
     .hws-marker-num {
-      width: 28px;
-      height: 28px;
-      background: var(--global-palette1);
-      color: #fff;
-      border-radius: 50%;
-      border: 2px solid #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: bold;
-      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+      width: 28px; height: 28px; background: var(--global-palette1); color: #fff;
+      border-radius: 50%; border: 2px solid #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,.3);
     }
     </style>
 
-    <!-- ------------------------------------------------------------------ -->
-    <!-- Widget logic                                                         -->
-    <!-- ------------------------------------------------------------------ -->
     <script>
     (function () {
-      // Leaflet is enqueued in the footer — wait for DOM + scripts to be ready.
       function onReady(fn) {
         if (document.readyState !== 'loading') { fn(); }
         else { document.addEventListener('DOMContentLoaded', fn); }
       }
 
       onReady(function () {
-        // If Leaflet isn't available yet (edge case), retry once after a tick
-        if (typeof L === 'undefined') {
-          setTimeout(onReady, 50);
-          return;
-        }
+        if (typeof L === 'undefined') { setTimeout(onReady, 50); return; }
 
-        const widget      = document.getElementById(<?php echo json_encode($uid); ?>);
-        const input       = widget.querySelector('.hws-input');
+        const widget    = document.getElementById(<?php echo json_encode($uid); ?>);
+        const input     = widget.querySelector('.hws-input');
         const suggestions = widget.querySelector('.hws-suggestions');
-        const searchBtn   = widget.querySelector('.hws-search-btn');
-        const gpsBtn      = widget.querySelector('.hws-gps-btn');
-        const statusEl    = widget.querySelector('.hws-status');
-        const contentEl   = widget.querySelector('.hws-content');
-        const mapEl       = document.getElementById(<?php echo json_encode($map_id); ?>);
-        const resultsEl   = widget.querySelector('.hws-results');
+        const searchBtn = widget.querySelector('.hws-search-btn');
+        const gpsBtn    = widget.querySelector('.hws-gps-btn');
+        const statusEl  = widget.querySelector('.hws-status');
+        const contentEl = widget.querySelector('.hws-content');
+        const mapEl     = document.getElementById(<?php echo json_encode($map_id); ?>);
+        const resultsEl = widget.querySelector('.hws-results');
 
         const SUGGEST_URL = <?php echo json_encode($suggest_url); ?>;
         const NEARBY_URL  = <?php echo json_encode($nearby_url); ?>;
@@ -636,16 +360,14 @@ class KEO_User_Search_Map {
         let leafletMap     = null;
         let leafletMarkers = [];
 
-        // Initialize map immediately with Austria overview
+        // Initialize map with Austria overview
         leafletMap = L.map(mapEl).setView([47.5, 14.1], 7);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
           maxZoom: 18,
         }).addTo(leafletMap);
 
-        // ---------------------------------------------------------------- //
-        // Autocomplete                                                       //
-        // ---------------------------------------------------------------- //
+        // --- Autocomplete ---
 
         input.addEventListener('input', function () {
           clearTimeout(debounceTimer);
@@ -655,42 +377,23 @@ class KEO_User_Search_Map {
         });
 
         input.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            hideSuggestions();
-            searchByText(input.value);
-          }
-          if (e.key === 'Escape') { hideSuggestions(); }
+          if (e.key === 'Enter') { e.preventDefault(); hideSuggestions(); searchByText(input.value); }
+          if (e.key === 'Escape') hideSuggestions();
         });
 
-        searchBtn.addEventListener('click', function () {
-          hideSuggestions();
-          searchByText(input.value);
-        });
+        searchBtn.addEventListener('click', function () { hideSuggestions(); searchByText(input.value); });
 
-        // Close suggestions when clicking outside the widget
-        document.addEventListener('click', function (e) {
-          if (!widget.contains(e.target)) hideSuggestions();
-        });
+        document.addEventListener('click', function (e) { if (!widget.contains(e.target)) hideSuggestions(); });
 
         async function fetchSuggestions(q) {
           try {
             const res  = await fetch(SUGGEST_URL + '?q=' + encodeURIComponent(q));
             const data = await res.json();
-
-            if (!Array.isArray(data) || data.length === 0) {
-              hideSuggestions();
-              return;
-            }
-
+            if (!Array.isArray(data) || !data.length) { hideSuggestions(); return; }
             renderSuggestions(data);
-          } catch (err) {
-            hideSuggestions();
-          }
+          } catch (err) { hideSuggestions(); }
         }
 
-        // Search by text without selecting from dropdown (Enter or search button).
-        // Fetches suggestions and uses the top result's coordinates.
         async function searchByText(text) {
           text = (text || '').trim();
           if (text.length < 2) return;
@@ -699,14 +402,9 @@ class KEO_User_Search_Map {
           try {
             const res  = await fetch(SUGGEST_URL + '?q=' + encodeURIComponent(text));
             const data = await res.json();
-            if (!Array.isArray(data) || data.length === 0) {
-              showStatus('Adresse nicht gefunden.', true);
-              return;
-            }
+            if (!Array.isArray(data) || !data.length) { showStatus('Adresse nicht gefunden.', true); return; }
             searchNearby(data[0].lat, data[0].lng, data[0].label);
-          } catch (err) {
-            showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true);
-          }
+          } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
         }
 
         function renderSuggestions(items) {
@@ -725,28 +423,18 @@ class KEO_User_Search_Map {
           suggestions.removeAttribute('hidden');
         }
 
-        function hideSuggestions() {
-          suggestions.setAttribute('hidden', '');
-          suggestions.innerHTML = '';
-        }
+        function hideSuggestions() { suggestions.setAttribute('hidden', ''); suggestions.innerHTML = ''; }
 
-        // ---------------------------------------------------------------- //
-        // GPS                                                                //
-        // ---------------------------------------------------------------- //
+        // --- GPS ---
 
         gpsBtn.addEventListener('click', function () {
-          if (!navigator.geolocation) {
-            showStatus('Standortermittlung wird von diesem Browser nicht unterstützt.', true);
-            return;
-          }
-
+          if (!navigator.geolocation) { showStatus('Standortermittlung wird von diesem Browser nicht unterstützt.', true); return; }
           gpsBtn.disabled = true;
           showStatus('Standort wird ermittelt …');
-
           navigator.geolocation.getCurrentPosition(
             function (pos) {
               gpsBtn.disabled = false;
-              input.value     = '';
+              input.value = '';
               hideSuggestions();
               searchNearby(pos.coords.latitude, pos.coords.longitude, null);
             },
@@ -758,48 +446,29 @@ class KEO_User_Search_Map {
           );
         });
 
-        // ---------------------------------------------------------------- //
-        // Search + results                                                   //
-        // ---------------------------------------------------------------- //
+        // --- Search + results ---
 
         async function searchNearby(lat, lng, label) {
           showStatus('Suche nach verfügbaren Betrieben …');
           clearResults();
-
           try {
-            const url = NEARBY_URL
-              + '?lat=' + encodeURIComponent(lat)
-              + '&lng=' + encodeURIComponent(lng);
-
+            const url = NEARBY_URL + '?lat=' + encodeURIComponent(lat) + '&lng=' + encodeURIComponent(lng);
             const res  = await fetch(url);
             const data = await res.json();
-
-            if (!res.ok) {
-              showStatus((data && data.message) || 'Fehler bei der Suche.', true);
-              return;
-            }
-
-            if (!data.data || data.data.length === 0) {
-              showStatus('Keine verfügbaren Betriebe in der Nähe gefunden.', true);
-              return;
-            }
-
+            if (!res.ok) { showStatus((data && data.message) || 'Fehler bei der Suche.', true); return; }
+            if (!data.data || !data.data.length) { showStatus('Keine verfügbaren Betriebe in der Nähe gefunden.', true); return; }
             hideStatus();
             renderResults(data.data);
             renderMap(data.data, lat, lng, label);
             contentEl.classList.add('hws-has-results');
             setTimeout(function () { leafletMap.invalidateSize(); }, 50);
-          } catch (err) {
-            showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true);
-          }
+          } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
         }
 
         function renderResults(businesses) {
           resultsEl.innerHTML = '';
-
           businesses.forEach(function (b, i) {
             const dist = formatDist(b.distance_km);
-
             const card = document.createElement('div');
             card.className = 'hws-card';
             card.innerHTML =
@@ -807,72 +476,45 @@ class KEO_User_Search_Map {
               + '<div class="hws-card-body">'
               +   '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
               +   '<p class="hws-card-addr">' + h(b.full_address || '') + '</p>'
-              +   (b.phone
-                    ? '<p class="hws-card-phone"><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a></p>'
-                    : '')
-              +   (b.website
-                    ? '<p class="hws-card-site"><a href="' + a(b.website) + '" target="_blank" rel="noopener noreferrer">'
-                      + h(b.website.replace(/^https?:\/\//, '')) + '</a></p>'
-                    : '')
+              +   (b.phone ? '<p class="hws-card-phone"><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a></p>' : '')
+              +   (b.website ? '<p class="hws-card-site"><a href="' + a(b.website) + '" target="_blank" rel="noopener noreferrer">' + h(b.website.replace(/^https?:\/\//, '')) + '</a></p>' : '')
               + '</div>'
               + (dist ? '<div class="hws-card-dist">' + h(dist) + '</div>' : '');
-
             resultsEl.appendChild(card);
           });
         }
 
-        // ---------------------------------------------------------------- //
-        // Map (Leaflet + OpenStreetMap)                                      //
-        // ---------------------------------------------------------------- //
+        // --- Map ---
 
         function renderMap(businesses, searchLat, searchLng, searchLabel) {
-          // Clear previous markers
           leafletMarkers.forEach(function (m) { m.remove(); });
           leafletMarkers = [];
 
-          // Search-location pin
           const searchIcon = L.divIcon({
-            className: '',
-            html: '<div class="hws-marker-search">📍</div>',
-            iconSize:   [24, 28],
-            iconAnchor: [12, 28],
-            popupAnchor: [0, -28],
+            className: '', html: '<div class="hws-marker-search">📍</div>',
+            iconSize: [24, 28], iconAnchor: [12, 28], popupAnchor: [0, -28],
           });
-          const searchMarker = L.marker([searchLat, searchLng], { icon: searchIcon })
-            .bindPopup(searchLabel
-              ? '<strong>' + h(searchLabel) + '</strong>'
-              : '<strong>Ihr Standort</strong>')
-            .addTo(leafletMap);
-          leafletMarkers.push(searchMarker);
+          leafletMarkers.push(
+            L.marker([searchLat, searchLng], { icon: searchIcon })
+              .bindPopup(searchLabel ? '<strong>' + h(searchLabel) + '</strong>' : '<strong>Ihr Standort</strong>')
+              .addTo(leafletMap)
+          );
 
-          // Business markers
           const bounds = [[searchLat, searchLng]];
           businesses.forEach(function (b, i) {
             if (!b.latitude || !b.longitude) return;
-
             const numIcon = L.divIcon({
-              className: '',
-              html: '<div class="hws-marker-num">' + (i + 1) + '</div>',
-              iconSize:   [28, 28],
-              iconAnchor: [14, 28],
-              popupAnchor: [0, -28],
+              className: '', html: '<div class="hws-marker-num">' + (i + 1) + '</div>',
+              iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -28],
             });
-
             const popup = '<strong>' + h(b.innung_name || '') + '</strong>'
               + (b.full_address ? '<br>' + h(b.full_address) : '')
-              + (b.phone
-                  ? '<br><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>'
-                  : '');
-
-            const m = L.marker([b.latitude, b.longitude], { icon: numIcon })
-              .bindPopup(popup)
-              .addTo(leafletMap);
-
+              + (b.phone ? '<br><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>' : '');
+            const m = L.marker([b.latitude, b.longitude], { icon: numIcon }).bindPopup(popup).addTo(leafletMap);
             leafletMarkers.push(m);
             bounds.push([b.latitude, b.longitude]);
           });
 
-          // Fit map to show all markers
           if (bounds.length > 1) {
             leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
           } else {
@@ -880,48 +522,30 @@ class KEO_User_Search_Map {
           }
         }
 
-        // ---------------------------------------------------------------- //
-        // UI helpers                                                         //
-        // ---------------------------------------------------------------- //
+        // --- UI helpers ---
 
         function showStatus(msg, isError) {
           statusEl.textContent = msg;
           statusEl.classList.toggle('hws-error', !!isError);
           statusEl.removeAttribute('hidden');
         }
-
         function hideStatus() {
           statusEl.setAttribute('hidden', '');
           statusEl.textContent = '';
           statusEl.classList.remove('hws-error');
         }
-
-        function clearResults() {
-          resultsEl.innerHTML = '';
-        }
+        function clearResults() { resultsEl.innerHTML = ''; }
 
         function formatDist(km) {
           if (km === null || km === undefined) return '';
-          return km < 1
-            ? Math.round(km * 1000) + '\u202fm'   // e.g. 450 m (narrow space)
-            : km.toFixed(1) + '\u202fkm';           // e.g. 3.4 km
+          return km < 1 ? Math.round(km * 1000) + '\u202fm' : km.toFixed(1) + '\u202fkm';
         }
 
-        // Minimal HTML escaping for dynamic content inserted via innerHTML
         function h(s) {
-          return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+          return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
-
-        // Attribute escaping for href values
         function a(s) {
-          return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#x27;');
+          return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
         }
       });
     })();
