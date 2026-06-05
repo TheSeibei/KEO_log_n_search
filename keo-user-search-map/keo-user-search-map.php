@@ -292,8 +292,8 @@ class KEO_User_Search_Map {
     }
 
     .hws-card {
-      display: flex; align-items: flex-start; gap: 10px;
-      padding: 8px 12px; margin-bottom: 15px;
+      display: flex; align-items: flex-start; gap: 6px;
+      padding: 8px 12px; margin-bottom: 20px;
       border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
