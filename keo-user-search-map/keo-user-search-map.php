@@ -3,7 +3,7 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.1.1
+ * Version:     1.2.0
  */
 
 if (!defined('ABSPATH')) exit;
@@ -432,7 +432,7 @@ class KEO_User_Search_Map {
     }
     .hws-input:focus {
       outline: none;
-      border-color: #cc0000;
+      border-color: var(--global-palette1);
       box-shadow: 0 0 0 2px rgba(204,0,0,.12);
     }
 
@@ -469,7 +469,7 @@ class KEO_User_Search_Map {
     .hws-search-btn,
     .hws-gps-btn {
       padding: 10px 13px;
-      background: #cc0000;
+      background: var(--global-palette1);
       color: #fff;
       border: none;
       border-radius: 6px;
@@ -483,7 +483,7 @@ class KEO_User_Search_Map {
     .hws-search-btn:hover,
     .hws-gps-btn:hover  { background: #aa0000; }
     .hws-search-btn:focus,
-    .hws-gps-btn:focus  { outline: 2px solid #cc0000; outline-offset: 2px; }
+    .hws-gps-btn:focus  { outline: 2px solid var(--global-palette1); outline-offset: 2px; }
     .hws-search-btn[disabled],
     .hws-gps-btn[disabled] { opacity: .55; cursor: not-allowed; }
 
@@ -498,19 +498,19 @@ class KEO_User_Search_Map {
       color: #555;
     }
     .hws-status.hws-error {
-      border-left-color: #cc0000;
+      border-left-color: var(--global-palette1);
       background: #fff5f5;
-      color: #cc0000;
+      color: var(--global-palette1);
     }
 
     /* --- Content container ---
        Default (initial / narrow): map full width, fixed height.
-       hws-has-results (wide): map 65% right, cards 35% left, same height. */
+       hws-has-results (wide): map 65% right, cards 35% left — only width changes, height stays fixed. */
     .hws-content {
       margin-top: 16px;
     }
     .hws-map {
-      height: 300px;
+      height: 270px;
       border-radius: 8px;
       overflow: hidden;
       border: 1px solid #e0e0e0;
@@ -522,13 +522,12 @@ class KEO_User_Search_Map {
       .hws-content.hws-has-results {
         display: flex;
         flex-direction: row-reverse;
-        align-items: stretch;
+        align-items: flex-start;
         gap: 16px;
       }
       .hws-content.hws-has-results .hws-map {
         flex: 0 0 65%;
-        height: auto;
-        min-height: 200px;
+        /* height intentionally NOT overridden — stays 270px */
       }
       .hws-content.hws-has-results .hws-results {
         flex: 0 0 calc(35% - 8px);
@@ -538,51 +537,46 @@ class KEO_User_Search_Map {
       display: flex;
       align-items: flex-start;
       gap: 10px;
-      padding: 8px 12px;
-      margin-bottom: 8px;
-      border: 1px solid #e0e0e0;
+      padding: 6px 10px;
+      margin-bottom: 6px;
+      border: 3px solid #e0e0e0;
       border-radius: 8px;
       background: #fff;
       transition: border-color .15s;
     }
     .hws-card:last-child { margin-bottom: 0; }
-    .hws-card:hover { border-color: #cc0000; }
+    .hws-card:hover { border-color: var(--global-palette1); }
     .hws-card-num {
       flex-shrink: 0;
-      width: 28px;
-      height: 28px;
-      background: #cc0000;
+      width: 26px;
+      height: 26px;
+      background: var(--global-palette1);
       color: #fff;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       margin-top: 1px;
     }
-    .hws-card-body  { flex: 1; min-width: 0; }
-    .hws-card-name  { margin: 0 0 3px; font-weight: bold; font-size: 15px; color: var(--global-palette8); }
-    .hws-card-addr  { margin: 0 0 3px; font-size: 13px; color: #555; }
-    .hws-card-phone { margin: 0 0 2px; font-size: 13px; }
+    .hws-card-body  { flex: 1; min-width: 0; line-height: 1.25; }
+    .hws-card-name  { margin: 0; font-weight: bold; font-size: 14px; color: var(--global-palette8); }
+    .hws-card-addr  { margin: 0; font-size: 12px; color: #555; }
+    .hws-card-phone { margin: 0; font-size: 12px; }
     .hws-card-phone a,
     .hws-card-site a {
-      color: #cc0000;
+      color: var(--global-palette1);
       text-decoration: none;
     }
-    .hws-card-site  { margin: 0; font-size: 13px; }
+    .hws-card-site  { margin: 0; font-size: 12px; }
     .hws-card-dist {
       flex-shrink: 0;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       color: #555;
       white-space: nowrap;
-      padding-top: 4px;
-    }
-      font-weight: bold;
-      color: #555;
-      white-space: nowrap;
-      padding-top: 4px;
+      padding-top: 2px;
     }
 
     /* --- Leaflet marker overrides --- */
@@ -594,7 +588,7 @@ class KEO_User_Search_Map {
     .hws-marker-num {
       width: 28px;
       height: 28px;
-      background: #cc0000;
+      background: var(--global-palette1);
       color: #fff;
       border-radius: 50%;
       border: 2px solid #fff;
