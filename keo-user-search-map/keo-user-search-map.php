@@ -3,14 +3,14 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.2.1
+ * Version:     1.3.0
  */
 
 if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION                = '1.2.1';
+  const VERSION                = '1.3.0';
   const SUGGEST_RL_IP          = 300;
   const SUGGEST_RL_GLOBAL      = 3000;
   const SUGGEST_RL_GLOBAL_MONTHLY = 80000;
@@ -276,28 +276,43 @@ class KEO_User_Search_Map {
     }
     .hws-status.hws-error { border-left-color: var(--global-palette1); background: #fff5f5; color: var(--global-palette1); }
 
-    .hws-content { margin-top: 16px; }
+    /* Content: flex column by default (map on top, results below with gap).
+       At >=1100px with results: row-reverse (map right, cards left), equal heights. */
+    .hws-content {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
     .hws-map {
       height: 320px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
     }
-    .hws-results { margin-top: 0; }
+    /* Results as grid so all cards share equal height in the wide layout */
+    .hws-results { display: grid; gap: 6px; }
     .hws-results:empty { display: none; }
 
-    @media (min-width: 640px) {
+    @media (min-width: 1100px) {
       .hws-content.hws-has-results {
-        display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 16px;
+        flex-direction: row-reverse;
+        align-items: stretch;       /* map stretches to match the cards' height */
       }
-      .hws-content.hws-has-results .hws-map { flex: 0 0 65%; }
-      .hws-content.hws-has-results .hws-results { flex: 0 0 calc(35% - 8px); }
+      .hws-content.hws-has-results .hws-map {
+        flex: 0 0 calc(65% - 8px);  /* -8px so map + cards + 16px gap = 100% */
+        height: auto;               /* grows/shrinks with the cards */
+        min-height: 200px;
+      }
+      .hws-content.hws-has-results .hws-results {
+        flex: 0 0 calc(35% - 8px);
+        grid-auto-rows: 1fr;        /* all cards equal height */
+      }
     }
 
     .hws-card {
       display: flex; align-items: flex-start; gap: 10px;
-      padding: 8px 12px; margin-bottom: 6px;
+      padding: 8px 12px;
       border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
-    .hws-card:last-child { margin-bottom: 0; }
     .hws-card:hover { border-color: var(--global-palette1); }
 
     /* Reset theme paragraph margins — !important beats .entry-content p etc. */
@@ -368,6 +383,13 @@ class KEO_User_Search_Map {
           attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
           maxZoom: 18,
         }).addTo(leafletMap);
+
+        // Re-render map on window resize (e.g. crossing the 1100px breakpoint)
+        let resizeTimer = null;
+        window.addEventListener('resize', function () {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(function () { if (leafletMap) leafletMap.invalidateSize(); }, 200);
+        });
 
         // --- Autocomplete ---
 
@@ -461,9 +483,10 @@ class KEO_User_Search_Map {
             if (!data.data || !data.data.length) { showStatus('Keine verfügbaren Betriebe in der Nähe gefunden.', true); return; }
             hideStatus();
             renderResults(data.data);
-            renderMap(data.data, lat, lng, label);
             contentEl.classList.add('hws-has-results');
-            setTimeout(function () { leafletMap.invalidateSize(); }, 50);
+            renderMap(data.data, lat, lng, label);
+            // Let the layout settle (grid heights, flex stretch) before Leaflet measures
+            setTimeout(function () { leafletMap.invalidateSize(); }, 80);
           } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
         }
 
