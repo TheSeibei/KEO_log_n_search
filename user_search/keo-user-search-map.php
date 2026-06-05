@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: Helwacht Search
+ * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
  * Version:     1.0.0
@@ -8,7 +8,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-class Helwacht_Search {
+class KEO_User_Search_Map {
 
   const VERSION           = '1.0.0';
   const SUGGEST_RL_IP     = 300;   // max autocomplete requests per IP per day
@@ -860,4 +860,4 @@ class Helwacht_Search {
   }
 }
 
-new Helwacht_Search();
+new KEO_User_Search_Map();
