@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.3.5
+ * Version: 0.3.6
  */
 
 if (!defined('ABSPATH')) exit;
@@ -28,8 +28,9 @@ class Helwacht_Availability {
   const DEFAULT_COUNTRY_CODE     = 'at';
   const MAX_QUERY_LENGTH        = 200;
   // Rate limiting for geocoding (protects against Mapbox costs / API spam)
-  const RATE_LIMIT_IP_PER_DAY     = 100;   // max geocoding searches per IP per day
-  const RATE_LIMIT_GLOBAL_PER_DAY = 1000;  // max geocoding searches across all IPs per day
+  const RATE_LIMIT_IP_PER_DAY       = 100;    // max geocoding searches per IP per day
+  const RATE_LIMIT_GLOBAL_PER_DAY   = 1000;   // max geocoding searches across all IPs per day
+  const RATE_LIMIT_GLOBAL_PER_MONTH = 20000;  // monthly hard cap (Mapbox free tier: 100k/month shared with search plugin)
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
@@ -535,25 +536,30 @@ class Helwacht_Availability {
   /**
    * Checks the daily limit for geocoding requests and increments on success.
    *
-   * - Per IP:  RATE_LIMIT_IP_PER_DAY requests per day
-   * - Global:  RATE_LIMIT_GLOBAL_PER_DAY requests per day (safety net, since
-   *            Mapbox itself has no spending cap)
+   * - Per IP:    RATE_LIMIT_IP_PER_DAY requests per day
+   * - Global:    RATE_LIMIT_GLOBAL_PER_DAY requests per day (safety net, since
+   *              Mapbox itself has no spending cap)
+   * - Monthly:   RATE_LIMIT_GLOBAL_PER_MONTH requests per month (Mapbox free tier
+   *              budget — 20k reserved for geocoding, 80k for autocomplete)
    *
    * Returns null when the request is allowed, otherwise a WP_Error with HTTP
-   * status 429. The counters live in transients with a per-day key and expire
-   * automatically after one day (no permanent bloating of the DB).
+   * status 429. The counters live in transients with a per-day / per-month key
+   * and expire automatically (no permanent bloating of the DB).
    *
    * Note: transients are not atomic. With many concurrent requests there can
    * be minor inaccuracies, which is uncritical for pure cost protection.
    */
   private function enforce_geocode_rate_limit() {
     $day        = current_time('Ymd');
+    $month      = current_time('Ym');
     $ip         = $this->get_client_ip();
-    $ip_key     = 'helwacht_rl_ip_' . md5($ip) . '_' . $day;
-    $global_key = 'helwacht_rl_global_' . $day;
+    $ip_key       = 'helwacht_rl_ip_' . md5($ip) . '_' . $day;
+    $global_key   = 'helwacht_rl_global_' . $day;
+    $monthly_key  = 'helwacht_rl_global_monthly_' . $month;
 
     $ip_count     = (int) get_transient($ip_key);
     $global_count = (int) get_transient($global_key);
+    $monthly_count = (int) get_transient($monthly_key);
 
     if ($ip_count >= self::RATE_LIMIT_IP_PER_DAY) {
       return new \WP_Error(
@@ -571,8 +577,17 @@ class Helwacht_Availability {
       );
     }
 
+    if ($monthly_count >= self::RATE_LIMIT_GLOBAL_PER_MONTH) {
+      return new \WP_Error(
+        'helwacht_rate_limited_monthly',
+        'Search is temporarily unavailable. Please try again later.',
+        ['status' => 429]
+      );
+    }
+
     set_transient($ip_key, $ip_count + 1, DAY_IN_SECONDS);
     set_transient($global_key, $global_count + 1, DAY_IN_SECONDS);
+    set_transient($monthly_key, $monthly_count + 1, 31 * DAY_IN_SECONDS);
 
     return null;
   }
