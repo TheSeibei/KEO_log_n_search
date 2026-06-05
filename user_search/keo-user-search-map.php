@@ -26,13 +26,28 @@ class Helwacht_Search {
   // -------------------------------------------------------------------------
 
   private function get_mapbox_token() {
-    // Reuses helwacht_mapbox_token set in the Helwacht Availability plugin.
+    // Same lookup order as Helwacht_Availability::get_mapbox_token():
+    // 1. PHP constant  2. Environment variable  3. WP option
+    if (defined('HELWACHT_MAPBOX_TOKEN') && is_string(HELWACHT_MAPBOX_TOKEN) && trim(HELWACHT_MAPBOX_TOKEN) !== '') {
+      return trim(HELWACHT_MAPBOX_TOKEN);
+    }
+    $env = getenv('HELWACHT_MAPBOX_TOKEN');
+    if (is_string($env) && trim($env) !== '') {
+      return trim($env);
+    }
     $token = get_option('helwacht_mapbox_token', '');
     return is_string($token) ? trim($token) : '';
   }
 
   private function get_api_key() {
-    // Reuses helwacht_api_key set in the Helwacht Availability plugin.
+    // Same lookup order as above.
+    if (defined('HELWACHT_API_KEY') && is_string(HELWACHT_API_KEY) && trim(HELWACHT_API_KEY) !== '') {
+      return trim(HELWACHT_API_KEY);
+    }
+    $env = getenv('HELWACHT_API_KEY');
+    if (is_string($env) && trim($env) !== '') {
+      return trim($env);
+    }
     $key = get_option('helwacht_api_key', '');
     return is_string($key) ? trim($key) : '';
   }
