@@ -3,7 +3,7 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.0.0
+ * Version:     1.1.0
  */
 
 if (!defined('ABSPATH')) exit;
@@ -371,6 +371,16 @@ class KEO_User_Search_Map {
           <ul class="hws-suggestions" role="listbox" aria-label="Adressvorschläge" hidden></ul>
         </div>
 
+        <button class="hws-search-btn" title="Adresse suchen" aria-label="Adresse suchen">
+          <!-- magnifier icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+
         <button class="hws-gps-btn" title="Aktuellen Standort verwenden" aria-label="Aktuellen Standort verwenden">
           <!-- crosshair / location icon -->
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
@@ -384,9 +394,10 @@ class KEO_User_Search_Map {
 
       <p class="hws-status" role="status" hidden></p>
 
-      <div id="<?php echo esc_attr($map_id); ?>" class="hws-map" hidden></div>
-
-      <div class="hws-results" hidden></div>
+      <div class="hws-content" hidden>
+        <div id="<?php echo esc_attr($map_id); ?>" class="hws-map"></div>
+        <div class="hws-results"></div>
+      </div>
 
     </div>
 
@@ -396,8 +407,7 @@ class KEO_User_Search_Map {
     <style>
     .hws-widget {
       font-family: inherit;
-      max-width: 640px;
-      margin: 0 auto;
+      width: 100%;
     }
 
     /* --- Input row --- */
@@ -449,12 +459,14 @@ class KEO_User_Search_Map {
       line-height: 1.4;
       cursor: pointer;
       border-bottom: 1px solid #f0f0f0;
+      color: var(--global-palette8);
     }
     .hws-suggestions li:last-child { border-bottom: none; }
     .hws-suggestions li:hover,
     .hws-suggestions li.hws-active { background: #f8f8f8; }
 
-    /* --- GPS button --- */
+    /* --- Buttons (search + GPS) --- */
+    .hws-search-btn,
     .hws-gps-btn {
       padding: 10px 13px;
       background: #cc0000;
@@ -468,13 +480,16 @@ class KEO_User_Search_Map {
       flex-shrink: 0;
       transition: background .2s;
     }
+    .hws-search-btn:hover,
     .hws-gps-btn:hover  { background: #aa0000; }
+    .hws-search-btn:focus,
     .hws-gps-btn:focus  { outline: 2px solid #cc0000; outline-offset: 2px; }
+    .hws-search-btn[disabled],
     .hws-gps-btn[disabled] { opacity: .55; cursor: not-allowed; }
 
     /* --- Status message --- */
     .hws-status {
-      margin: 12px 0 0;
+      margin: 20px 0 0;
       padding: 10px 14px;
       background: #f9f9f9;
       border-left: 3px solid #ccc;
@@ -488,28 +503,52 @@ class KEO_User_Search_Map {
       color: #cc0000;
     }
 
+    /* --- Content: map + results side by side on wide screens --- */
+    .hws-content {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    @media (min-width: 640px) {
+      .hws-content {
+        flex-direction: row-reverse; /* map right, results left */
+        align-items: stretch;
+      }
+      .hws-results {
+        flex: 1;
+        margin-top: 0;
+      }
+      .hws-map {
+        flex: 1;
+        height: auto;
+        min-height: 300px;
+        margin-top: 0;
+      }
+    }
+
     /* --- Map --- */
     .hws-map {
       height: 300px;
-      margin-top: 16px;
       border-radius: 8px;
       overflow: hidden;
       border: 1px solid #e0e0e0;
     }
 
     /* --- Result cards --- */
-    .hws-results { margin-top: 16px; }
+    .hws-results { flex: 1; }
     .hws-card {
       display: flex;
       align-items: flex-start;
       gap: 12px;
-      padding: 14px;
+      padding: 12px 14px;
       margin-bottom: 8px;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
       background: #fff;
       transition: border-color .15s;
     }
+    .hws-card:last-child { margin-bottom: 0; }
     .hws-card:hover { border-color: #cc0000; }
     .hws-card-num {
       flex-shrink: 0;
@@ -526,18 +565,23 @@ class KEO_User_Search_Map {
       margin-top: 1px;
     }
     .hws-card-body  { flex: 1; min-width: 0; }
-    .hws-card-name  { margin: 0 0 4px; font-weight: bold; font-size: 15px; }
-    .hws-card-addr  { margin: 0 0 4px; font-size: 14px; color: #555; }
-    .hws-card-phone { margin: 0 0 2px; font-size: 14px; }
+    .hws-card-name  { margin: 0 0 3px; font-weight: bold; font-size: 15px; color: var(--global-palette8); }
+    .hws-card-addr  { margin: 0 0 3px; font-size: 13px; color: #555; }
+    .hws-card-phone { margin: 0 0 2px; font-size: 13px; }
     .hws-card-phone a,
     .hws-card-site a {
       color: #cc0000;
       text-decoration: none;
     }
-    .hws-card-site  { margin: 0; font-size: 14px; }
+    .hws-card-site  { margin: 0; font-size: 13px; }
     .hws-card-dist {
       flex-shrink: 0;
       font-size: 13px;
+      font-weight: bold;
+      color: #555;
+      white-space: nowrap;
+      padding-top: 4px;
+    }
       font-weight: bold;
       color: #555;
       white-space: nowrap;
@@ -587,8 +631,10 @@ class KEO_User_Search_Map {
         const widget      = document.getElementById(<?php echo json_encode($uid); ?>);
         const input       = widget.querySelector('.hws-input');
         const suggestions = widget.querySelector('.hws-suggestions');
+        const searchBtn   = widget.querySelector('.hws-search-btn');
         const gpsBtn      = widget.querySelector('.hws-gps-btn');
         const statusEl    = widget.querySelector('.hws-status');
+        const contentEl   = widget.querySelector('.hws-content');
         const mapEl       = document.getElementById(<?php echo json_encode($map_id); ?>);
         const resultsEl   = widget.querySelector('.hws-results');
 
@@ -611,7 +657,17 @@ class KEO_User_Search_Map {
         });
 
         input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            hideSuggestions();
+            searchByText(input.value);
+          }
           if (e.key === 'Escape') { hideSuggestions(); }
+        });
+
+        searchBtn.addEventListener('click', function () {
+          hideSuggestions();
+          searchByText(input.value);
         });
 
         // Close suggestions when clicking outside the widget
@@ -632,6 +688,26 @@ class KEO_User_Search_Map {
             renderSuggestions(data);
           } catch (err) {
             hideSuggestions();
+          }
+        }
+
+        // Search by text without selecting from dropdown (Enter or search button).
+        // Fetches suggestions and uses the top result's coordinates.
+        async function searchByText(text) {
+          text = (text || '').trim();
+          if (text.length < 2) return;
+          showStatus('Adresse wird gesucht …');
+          hideSuggestions();
+          try {
+            const res  = await fetch(SUGGEST_URL + '?q=' + encodeURIComponent(text));
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) {
+              showStatus('Adresse nicht gefunden.', true);
+              return;
+            }
+            searchNearby(data[0].lat, data[0].lng, data[0].label);
+          } catch (err) {
+            showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true);
           }
         }
 
@@ -713,6 +789,7 @@ class KEO_User_Search_Map {
             hideStatus();
             renderResults(data.data);
             renderMap(data.data, lat, lng, label);
+            contentEl.removeAttribute('hidden');
           } catch (err) {
             showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true);
           }
@@ -743,8 +820,6 @@ class KEO_User_Search_Map {
 
             resultsEl.appendChild(card);
           });
-
-          resultsEl.removeAttribute('hidden');
         }
 
         // ---------------------------------------------------------------- //
@@ -752,8 +827,6 @@ class KEO_User_Search_Map {
         // ---------------------------------------------------------------- //
 
         function renderMap(businesses, searchLat, searchLng, searchLabel) {
-          mapEl.removeAttribute('hidden');
-
           // Clear previous markers
           leafletMarkers.forEach(function (m) { m.remove(); });
           leafletMarkers = [];
@@ -836,9 +909,8 @@ class KEO_User_Search_Map {
         }
 
         function clearResults() {
-          resultsEl.setAttribute('hidden', '');
+          contentEl.setAttribute('hidden', '');
           resultsEl.innerHTML = '';
-          mapEl.setAttribute('hidden', '');
         }
 
         function formatDist(km) {
