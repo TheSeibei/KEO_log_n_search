@@ -3,7 +3,7 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.1.0
+ * Version:     1.1.1
  */
 
 if (!defined('ABSPATH')) exit;
@@ -394,7 +394,7 @@ class KEO_User_Search_Map {
 
       <p class="hws-status" role="status" hidden></p>
 
-      <div class="hws-content" hidden>
+      <div class="hws-content">
         <div id="<?php echo esc_attr($map_id); ?>" class="hws-map"></div>
         <div class="hws-results"></div>
       </div>
@@ -489,7 +489,7 @@ class KEO_User_Search_Map {
 
     /* --- Status message --- */
     .hws-status {
-      margin: 20px 0 0;
+      margin: 8px 0 0;
       padding: 10px 14px;
       background: #f9f9f9;
       border-left: 3px solid #ccc;
@@ -503,45 +503,42 @@ class KEO_User_Search_Map {
       color: #cc0000;
     }
 
-    /* --- Content: map + results side by side on wide screens --- */
+    /* --- Content container ---
+       Default (initial / narrow): map full width, fixed height.
+       hws-has-results (wide): map 65% right, cards 35% left, same height. */
     .hws-content {
       margin-top: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
     }
-    @media (min-width: 640px) {
-      .hws-content {
-        flex-direction: row-reverse; /* map right, results left */
-        align-items: stretch;
-      }
-      .hws-results {
-        flex: 1;
-        margin-top: 0;
-      }
-      .hws-map {
-        flex: 1;
-        height: auto;
-        min-height: 300px;
-        margin-top: 0;
-      }
-    }
-
-    /* --- Map --- */
     .hws-map {
       height: 300px;
       border-radius: 8px;
       overflow: hidden;
       border: 1px solid #e0e0e0;
     }
+    .hws-results { margin-top: 0; }
+    .hws-results:empty { display: none; }
 
-    /* --- Result cards --- */
-    .hws-results { flex: 1; }
+    @media (min-width: 640px) {
+      .hws-content.hws-has-results {
+        display: flex;
+        flex-direction: row-reverse;
+        align-items: stretch;
+        gap: 16px;
+      }
+      .hws-content.hws-has-results .hws-map {
+        flex: 0 0 65%;
+        height: auto;
+        min-height: 200px;
+      }
+      .hws-content.hws-has-results .hws-results {
+        flex: 0 0 calc(35% - 8px);
+      }
+    }
     .hws-card {
       display: flex;
       align-items: flex-start;
-      gap: 12px;
-      padding: 12px 14px;
+      gap: 10px;
+      padding: 8px 12px;
       margin-bottom: 8px;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
@@ -644,6 +641,13 @@ class KEO_User_Search_Map {
         let debounceTimer  = null;
         let leafletMap     = null;
         let leafletMarkers = [];
+
+        // Initialize map immediately with Austria overview
+        leafletMap = L.map(mapEl).setView([47.5, 14.1], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+          maxZoom: 18,
+        }).addTo(leafletMap);
 
         // ---------------------------------------------------------------- //
         // Autocomplete                                                       //
@@ -789,7 +793,8 @@ class KEO_User_Search_Map {
             hideStatus();
             renderResults(data.data);
             renderMap(data.data, lat, lng, label);
-            contentEl.removeAttribute('hidden');
+            contentEl.classList.add('hws-has-results');
+            setTimeout(function () { leafletMap.invalidateSize(); }, 50);
           } catch (err) {
             showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true);
           }
@@ -830,14 +835,6 @@ class KEO_User_Search_Map {
           // Clear previous markers
           leafletMarkers.forEach(function (m) { m.remove(); });
           leafletMarkers = [];
-
-          if (!leafletMap) {
-            leafletMap = L.map(mapEl);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
-              maxZoom: 18,
-            }).addTo(leafletMap);
-          }
 
           // Search-location pin
           const searchIcon = L.divIcon({
@@ -887,9 +884,6 @@ class KEO_User_Search_Map {
           } else {
             leafletMap.setView([searchLat, searchLng], 13);
           }
-
-          // Leaflet needs this when the container was previously hidden
-          setTimeout(function () { leafletMap.invalidateSize(); }, 100);
         }
 
         // ---------------------------------------------------------------- //
@@ -909,7 +903,6 @@ class KEO_User_Search_Map {
         }
 
         function clearResults() {
-          contentEl.setAttribute('hidden', '');
           resultsEl.innerHTML = '';
         }
 
