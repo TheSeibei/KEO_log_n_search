@@ -10,9 +10,10 @@ if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION           = '1.0.0';
-  const SUGGEST_RL_IP     = 300;   // max autocomplete requests per IP per day
-  const SUGGEST_RL_GLOBAL = 3000;  // max autocomplete requests global per day
+  const VERSION                = '1.0.1';
+  const SUGGEST_RL_IP          = 300;    // max autocomplete requests per IP per day
+  const SUGGEST_RL_GLOBAL      = 3000;   // max autocomplete requests global per day
+  const SUGGEST_RL_GLOBAL_MONTHLY = 80000; // monthly hard cap (80k autocomplete + 20k geocoding = 100k Mapbox free tier)
   const MAX_RESULTS       = 3;     // number of nearest businesses shown
 
   public function __construct() {
@@ -227,12 +228,15 @@ class KEO_User_Search_Map {
 
   private function check_rate_limit($prefix, $ip_limit, $global_limit) {
     $day        = current_time('Ymd');
+    $month      = current_time('Ym');
     $ip         = $this->get_client_ip();
-    $ip_key     = 'hwsearch_rl_' . $prefix . '_ip_' . md5($ip) . '_' . $day;
-    $global_key = 'hwsearch_rl_' . $prefix . '_global_' . $day;
+    $ip_key       = 'hwsearch_rl_' . $prefix . '_ip_' . md5($ip) . '_' . $day;
+    $global_key   = 'hwsearch_rl_' . $prefix . '_global_' . $day;
+    $monthly_key  = 'hwsearch_rl_' . $prefix . '_global_monthly_' . $month;
 
-    $ip_count     = (int) get_transient($ip_key);
-    $global_count = (int) get_transient($global_key);
+    $ip_count      = (int) get_transient($ip_key);
+    $global_count  = (int) get_transient($global_key);
+    $monthly_count = (int) get_transient($monthly_key);
 
     if ($ip_count >= $ip_limit) {
       return new \WP_Error(
@@ -250,8 +254,17 @@ class KEO_User_Search_Map {
       );
     }
 
+    if ($monthly_count >= self::SUGGEST_RL_GLOBAL_MONTHLY) {
+      return new \WP_Error(
+        'helwacht_search_rate_limited_monthly',
+        'Service temporarily unavailable. Please try again later.',
+        ['status' => 429]
+      );
+    }
+
     set_transient($ip_key, $ip_count + 1, DAY_IN_SECONDS);
     set_transient($global_key, $global_count + 1, DAY_IN_SECONDS);
+    set_transient($monthly_key, $monthly_count + 1, 31 * DAY_IN_SECONDS);
 
     return null;
   }
