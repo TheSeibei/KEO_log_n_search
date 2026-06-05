@@ -1,0 +1,25 @@
+name: Deploy KEO User Search map
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'keo-user-search-map/**'
+
+jobs:
+  ftp-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy plugin via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./keo-user-search-map/
+          server-dir: /wp-content/plugins/keo-user-search-map/
