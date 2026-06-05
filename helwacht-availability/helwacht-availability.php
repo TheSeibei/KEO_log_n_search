@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.3.4
+ * Version: 0.3.5
  */
 
 if (!defined('ABSPATH')) exit;
@@ -103,6 +103,19 @@ class Helwacht_Availability {
     $available = [];
     $search_coordinates = null;
 
+    // Direct coordinates (e.g. from GPS) bypass geocoding and rate limiting entirely.
+    // lat/lng take precedence over q when both are supplied.
+    $direct_lat = $request->get_param('lat');
+    $direct_lng = $request->get_param('lng');
+
+    if (is_numeric($direct_lat) && is_numeric($direct_lng)) {
+      $search_coordinates = [
+        'latitude'  => (float) $direct_lat,
+        'longitude' => (float) $direct_lng,
+      ];
+      $search_query = ''; // prevent q from being geocoded
+    }
+
     if ($search_query !== '') {
       // Check the limits before the (billable) Mapbox call.
       // Only requests with q count, i.e. only those that are actually geocoded.
@@ -195,6 +208,8 @@ class Helwacht_Availability {
 
       if (is_wp_error($business_coordinates)) {
         $record['distance_km'] = null;
+        $record['latitude']    = null;
+        $record['longitude']   = null;
       } else {
         $record['distance_km'] = $this->calculate_distance_km(
           $search_coordinates['latitude'],
@@ -202,6 +217,8 @@ class Helwacht_Availability {
           $business_coordinates['latitude'],
           $business_coordinates['longitude']
         );
+        $record['latitude']  = $business_coordinates['latitude'];
+        $record['longitude'] = $business_coordinates['longitude'];
       }
     }
 
