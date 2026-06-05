@@ -309,6 +309,7 @@ class KEO_User_Search_Map {
 
     .hws-card {
       display: flex; align-items: flex-start; gap: 10px;
+      cursor: pointer;
       padding: 8px 12px;
       border: 2px solid #fff; border-radius: 8px; background: #fff;
       transition: border-color .15s;
@@ -496,15 +497,29 @@ class KEO_User_Search_Map {
             const dist = formatDist(b.distance_km);
             const card = document.createElement('div');
             card.className = 'hws-card';
+            const displayAddress = [
+              b.address,
+              [b.postal_code, b.city].filter(Boolean).join(' '),
+              b.country
+            ].filter(Boolean).join(', ');
+
             card.innerHTML =
               '<div class="hws-card-num">' + (i + 1) + '</div>'
               + '<div class="hws-card-body">'
               +   '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
-              +   '<p class="hws-card-addr">' + h(b.full_address || '') + '</p>'
+              +   '<p class="hws-card-addr">' + h(displayAddress) + '</p>'
               +   (b.phone ? '<p class="hws-card-phone"><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a></p>' : '')
               +   (b.website ? '<p class="hws-card-site"><a href="' + a(b.website) + '" target="_blank" rel="noopener noreferrer">' + h(b.website.replace(/^https?:\/\//, '')) + '</a></p>' : '')
               + '</div>'
               + (dist ? '<div class="hws-card-dist">' + h(dist) + '</div>' : '');
+            card.addEventListener('click', function () {
+              if (b.latitude && b.longitude) {
+                leafletMap.setView([b.latitude, b.longitude], 16, { animate: true });
+                const marker = leafletMarkers[i + 1]; // first marker = search location
+                if (marker) marker.openPopup();
+              }
+            });
+
             resultsEl.appendChild(card);
           });
         }
