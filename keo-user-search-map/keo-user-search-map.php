@@ -3,14 +3,14 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.3.0
+ * Version:     1.4.0
  */
 
 if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION                = '1.3.0';
+  const VERSION                = '1.4.0';
   const SUGGEST_RL_IP          = 300;
   const SUGGEST_RL_GLOBAL      = 3000;
   const SUGGEST_RL_GLOBAL_MONTHLY = 80000;
@@ -314,6 +314,8 @@ class KEO_User_Search_Map {
       transition: border-color .15s;
     }
     .hws-card:hover { border-color: var(--global-palette1); }
+    /* Clickable cards (have coordinates) zoom the map on click */
+    .hws-card--clickable { cursor: pointer; }
 
     /* Reset theme paragraph margins — !important beats .entry-content p etc. */
     .hws-widget .hws-card p {
@@ -373,9 +375,10 @@ class KEO_User_Search_Map {
         const SUGGEST_URL = <?php echo json_encode($suggest_url); ?>;
         const NEARBY_URL  = <?php echo json_encode($nearby_url); ?>;
 
-        let debounceTimer  = null;
-        let leafletMap     = null;
-        let leafletMarkers = [];
+        let debounceTimer   = null;
+        let leafletMap      = null;
+        let leafletMarkers  = [];
+        let businessMarkers = [];   // markers indexed to match the result cards
 
         // Initialize map with Austria overview
         leafletMap = L.map(mapEl).setView([47.5, 14.1], 7);
@@ -490,6 +493,17 @@ class KEO_User_Search_Map {
           } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
         }
 
+        // Build an address with commas from the individual fields
+        // e.g. "Andersengasse 21, 1120 Wien, Österreich"
+        function formatAddress(b) {
+          const parts = [];
+          if (b.address) parts.push(b.address);
+          const cityLine = [b.postal_code, b.city].filter(Boolean).join(' ');
+          if (cityLine) parts.push(cityLine);
+          if (b.country) parts.push(b.country);
+          return parts.join(', ');
+        }
+
         function renderResults(businesses) {
           resultsEl.innerHTML = '';
           businesses.forEach(function (b, i) {
@@ -500,11 +514,25 @@ class KEO_User_Search_Map {
               '<div class="hws-card-num">' + (i + 1) + '</div>'
               + '<div class="hws-card-body">'
               +   '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
-              +   '<p class="hws-card-addr">' + h(b.full_address || '') + '</p>'
+              +   '<p class="hws-card-addr">' + h(formatAddress(b)) + '</p>'
               +   (b.phone ? '<p class="hws-card-phone"><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a></p>' : '')
               +   (b.website ? '<p class="hws-card-site"><a href="' + a(b.website) + '" target="_blank" rel="noopener noreferrer">' + h(b.website.replace(/^https?:\/\//, '')) + '</a></p>' : '')
               + '</div>'
               + (dist ? '<div class="hws-card-dist">' + h(dist) + '</div>' : '');
+
+            // Click on a card zooms the map to that business (links still work)
+            if (b.latitude && b.longitude) {
+              card.classList.add('hws-card--clickable');
+              card.addEventListener('click', function (e) {
+                if (e.target.closest('a')) return;
+                leafletMap.setView([b.latitude, b.longitude], 16);
+                if (businessMarkers[i]) businessMarkers[i].openPopup();
+                if (window.innerWidth < 1100) {
+                  mapEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+              });
+            }
+
             resultsEl.appendChild(card);
           });
         }
@@ -513,7 +541,8 @@ class KEO_User_Search_Map {
 
         function renderMap(businesses, searchLat, searchLng, searchLabel) {
           leafletMarkers.forEach(function (m) { m.remove(); });
-          leafletMarkers = [];
+          leafletMarkers  = [];
+          businessMarkers = [];
 
           const searchIcon = L.divIcon({
             className: '', html: '<div class="hws-marker-search">📍</div>',
@@ -527,16 +556,18 @@ class KEO_User_Search_Map {
 
           const bounds = [[searchLat, searchLng]];
           businesses.forEach(function (b, i) {
-            if (!b.latitude || !b.longitude) return;
+            if (!b.latitude || !b.longitude) { businessMarkers[i] = null; return; }
             const numIcon = L.divIcon({
               className: '', html: '<div class="hws-marker-num">' + (i + 1) + '</div>',
               iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -28],
             });
+            const addr = formatAddress(b);
             const popup = '<strong>' + h(b.innung_name || '') + '</strong>'
-              + (b.full_address ? '<br>' + h(b.full_address) : '')
+              + (addr ? '<br>' + h(addr) : '')
               + (b.phone ? '<br><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>' : '');
             const m = L.marker([b.latitude, b.longitude], { icon: numIcon }).bindPopup(popup).addTo(leafletMap);
             leafletMarkers.push(m);
+            businessMarkers[i] = m;
             bounds.push([b.latitude, b.longitude]);
           });
 
