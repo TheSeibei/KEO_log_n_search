@@ -292,8 +292,8 @@ class KEO_User_Search_Map {
     }
 
     .hws-card {
-      display: flex; align-items: flex-start; gap: 6px;
-      padding: 8px 12px; margin-bottom: 20px;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 12px; margin-bottom: 6px;
       border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
@@ -302,7 +302,7 @@ class KEO_User_Search_Map {
 
     /* Reset theme paragraph margins — !important beats .entry-content p etc. */
     .hws-widget .hws-card p {
-      margin: 0 0 2px 0 !important;
+      margin: 0 0 10px 0 !important;
       padding: 0 !important;
     }
     .hws-widget .hws-card p:last-of-type {
