@@ -278,7 +278,7 @@ class KEO_User_Search_Map {
 
     .hws-content { margin-top: 16px; }
     .hws-map {
-      height: 270px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
+      height: 320px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
     }
     .hws-results { margin-top: 0; }
     .hws-results:empty { display: none; }
@@ -293,18 +293,20 @@ class KEO_User_Search_Map {
 
     .hws-card {
       display: flex; align-items: flex-start; gap: 10px;
-      padding: 6px 10px; margin-bottom: 6px;
+      padding: 8px 12px; margin-bottom: 15px;
       border: 1px solid #e0e0e0; border-radius: 8px; background: #fff;
       transition: border-color .15s;
     }
     .hws-card:last-child { margin-bottom: 0; }
     .hws-card:hover { border-color: var(--global-palette1); }
 
-    /* Reset theme paragraph margins inside cards — use !important to beat
-       theme rules like .entry-content p { margin-bottom: 1em } */
+    /* Reset theme paragraph margins — !important beats .entry-content p etc. */
     .hws-widget .hws-card p {
-      margin: 0 !important;
+      margin: 0 0 2px 0 !important;
       padding: 0 !important;
+    }
+    .hws-widget .hws-card p:last-of-type {
+      margin-bottom: 0 !important;
     }
 
     .hws-card-num {
