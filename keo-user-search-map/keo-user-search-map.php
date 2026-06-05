@@ -3,14 +3,14 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.4.0
+ * Version:     1.4.1
  */
 
 if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION                = '1.4.0';
+  const VERSION                = '1.4.1';
   const SUGGEST_RL_IP          = 300;
   const SUGGEST_RL_GLOBAL      = 3000;
   const SUGGEST_RL_GLOBAL_MONTHLY = 80000;
@@ -327,10 +327,17 @@ class KEO_User_Search_Map {
     }
 
     .hws-card-num {
-      flex-shrink: 0; width: 26px; height: 26px;
-      background: var(--global-palette1); color: #fff; border-radius: 50%;
+      flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box;
+      background: var(--global-palette1); color: #fff;
+      border: 2px solid transparent; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: bold; margin-top: 2px;
+    }
+    /* Selected card: invert the number circle */
+    .hws-card--selected .hws-card-num {
+      background: #fff;
+      color: var(--global-palette1);
+      border-color: var(--global-palette1);
     }
     .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; }
     .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
@@ -350,6 +357,8 @@ class KEO_User_Search_Map {
       display: flex; align-items: center; justify-content: center;
       font-size: 13px; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,.3);
     }
+    /* Phone link inside map popups: bold + brand colour */
+    .hws-widget .hws-popup-phone { color: var(--global-palette1); font-weight: bold; text-decoration: none; }
     </style>
 
     <script>
@@ -379,6 +388,8 @@ class KEO_User_Search_Map {
         let leafletMap      = null;
         let leafletMarkers  = [];
         let businessMarkers = [];   // markers indexed to match the result cards
+        let selectedIndex   = -1;   // currently selected card, -1 = none
+        let lastBounds      = null; // overview bounds to zoom back to on deselect
 
         // Initialize map with Austria overview
         leafletMap = L.map(mapEl).setView([47.5, 14.1], 7);
@@ -506,6 +517,7 @@ class KEO_User_Search_Map {
 
         function renderResults(businesses) {
           resultsEl.innerHTML = '';
+          selectedIndex = -1;
           businesses.forEach(function (b, i) {
             const dist = formatDist(b.distance_km);
             const card = document.createElement('div');
@@ -520,13 +532,24 @@ class KEO_User_Search_Map {
               + '</div>'
               + (dist ? '<div class="hws-card-dist">' + h(dist) + '</div>' : '');
 
-            // Click on a card zooms the map to that business (links still work)
+            // Click toggles selection: select → zoom in; click again → deselect → overview
             if (b.latitude && b.longitude) {
               card.classList.add('hws-card--clickable');
               card.addEventListener('click', function (e) {
                 if (e.target.closest('a')) return;
-                leafletMap.setView([b.latitude, b.longitude], 16);
-                if (businessMarkers[i]) businessMarkers[i].openPopup();
+
+                if (selectedIndex === i) {
+                  deselectCards();
+                  if (businessMarkers[i]) businessMarkers[i].closePopup();
+                  if (lastBounds && lastBounds.length > 1) {
+                    leafletMap.fitBounds(lastBounds, { padding: [40, 40], maxZoom: 14 });
+                  }
+                } else {
+                  selectCard(i);
+                  leafletMap.setView([b.latitude, b.longitude], 16);
+                  if (businessMarkers[i]) businessMarkers[i].openPopup();
+                }
+
                 if (window.innerWidth < 1100) {
                   mapEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
@@ -535,6 +558,20 @@ class KEO_User_Search_Map {
 
             resultsEl.appendChild(card);
           });
+        }
+
+        function selectCard(i) {
+          resultsEl.querySelectorAll('.hws-card').forEach(function (c, idx) {
+            c.classList.toggle('hws-card--selected', idx === i);
+          });
+          selectedIndex = i;
+        }
+
+        function deselectCards() {
+          resultsEl.querySelectorAll('.hws-card').forEach(function (c) {
+            c.classList.remove('hws-card--selected');
+          });
+          selectedIndex = -1;
         }
 
         // --- Map ---
@@ -564,7 +601,7 @@ class KEO_User_Search_Map {
             const addr = formatAddress(b);
             const popup = '<strong>' + h(b.innung_name || '') + '</strong>'
               + (addr ? '<br>' + h(addr) : '')
-              + (b.phone ? '<br><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>' : '');
+              + (b.phone ? '<br><a class="hws-popup-phone" href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>' : '');
             const m = L.marker([b.latitude, b.longitude], { icon: numIcon }).bindPopup(popup).addTo(leafletMap);
             leafletMarkers.push(m);
             businessMarkers[i] = m;
@@ -572,8 +609,10 @@ class KEO_User_Search_Map {
           });
 
           if (bounds.length > 1) {
+            lastBounds = bounds;
             leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
           } else {
+            lastBounds = null;
             leafletMap.setView([searchLat, searchLng], 13);
           }
         }
