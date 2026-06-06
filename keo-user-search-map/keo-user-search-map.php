@@ -620,11 +620,12 @@ class KEO_User_Search_Map {
           const p = marker.getPopup();
           if (p && !p.isOpen()) marker.togglePopup();
         }
-        function closeMarkerPopup(marker) {
+        
+        /*function closeMarkerPopup(marker) {
           if (!marker) return;
           const p = marker.getPopup();
           if (p && p.isOpen()) marker.togglePopup();
-        }
+        }*/
 
         function closeAllMarkerPopups(businessMarkers) {
           if (!businessMarkers || businessMarkers.length === 0) return;
