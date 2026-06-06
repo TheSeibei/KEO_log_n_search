@@ -578,11 +578,10 @@ class KEO_User_Search_Map {
               card.classList.add('hws-card--clickable');
               card.addEventListener('click', function (e) {
                 if (e.target.closest('a')) return;
-                
-                closeAllMarkerPopups(businessMarkers);
 
                 if (selectedIndex === i) {
                   deselectCards();
+                  closeAllMarkerPopups(businessMarkers);
                   if (lastBounds) map.fitBounds(lastBounds, { padding: 50, maxZoom: 14 });
                 } else {
                   selectCard(i);
