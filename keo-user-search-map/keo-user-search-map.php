@@ -289,6 +289,7 @@ class KEO_User_Search_Map {
     }
     .hws-results { display: grid; gap: 6px; }
     .hws-results:empty { display: none; }
+    .hws-results--loading { opacity: 0.4; pointer-events: none; transition: opacity .2s; }
 
     @media (min-width: 1100px) {
       .hws-content.hws-has-results {
@@ -338,7 +339,7 @@ class KEO_User_Search_Map {
     .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
     .hws-card-addr { font-size: 12px; color: #555; }
     .hws-card-phone { font-size: 12px; }
-    .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; }
+    .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; font-weight: bold;}
     .hws-card-site { font-size: 12px; }
     .hws-card-dist {
       flex-shrink: 0; font-size: 12px; font-weight: bold;
@@ -522,15 +523,25 @@ class KEO_User_Search_Map {
 
         async function searchNearby(lat, lng, label) {
           showStatus('Suche nach verfügbaren Betrieben …');
-          clearResults();
+          // Dim old cards instead of clearing — keeps map height stable during loading
+          deselectCards();
+          resultsEl.classList.add('hws-results--loading');
           try {
             const url = NEARBY_URL + '?lat=' + encodeURIComponent(lat) + '&lng=' + encodeURIComponent(lng);
             const res  = await fetch(url);
             const data = await res.json();
-            if (!res.ok) { showStatus((data && data.message) || 'Fehler bei der Suche.', true); return; }
-            if (!data.data || !data.data.length) { showStatus('Keine verfügbaren Betriebe in der Nähe gefunden.', true); return; }
+            if (!res.ok) {
+              clearResults();
+              showStatus((data && data.message) || 'Fehler bei der Suche.', true);
+              return;
+            }
+            if (!data.data || !data.data.length) {
+              clearResults();
+              showStatus('Keine verfügbaren Betriebe in der Nähe gefunden.', true);
+              return;
+            }
             hideStatus();
-            renderResults(data.data);
+            renderResults(data.data);   // replaces old cards, removes loading class
             contentEl.classList.add('hws-has-results');
             renderMap(data.data, lat, lng, label);
             // FIX 2: resize first so MapLibre knows its real dimensions,
@@ -543,7 +554,10 @@ class KEO_User_Search_Map {
                 map.flyTo({ center: lastSearchLngLat, zoom: 13 });
               }
             }, 80);
-          } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
+          } catch (err) {
+            clearResults();
+            showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true);
+          }
         }
 
         function formatAddress(b) {
@@ -557,6 +571,7 @@ class KEO_User_Search_Map {
 
         function renderResults(businesses) {
           resultsEl.innerHTML = '';
+          resultsEl.classList.remove('hws-results--loading');
           selectedIndex = -1;
           businesses.forEach(function (b, i) {
             const dist = formatDist(b.distance_km);
@@ -693,7 +708,10 @@ class KEO_User_Search_Map {
           statusEl.textContent = '';
           statusEl.classList.remove('hws-error');
         }
-        function clearResults() { resultsEl.innerHTML = ''; }
+        function clearResults() {
+          resultsEl.innerHTML = '';
+          resultsEl.classList.remove('hws-results--loading');
+        }
 
         function formatDist(km) {
           if (km === null || km === undefined) return '';
