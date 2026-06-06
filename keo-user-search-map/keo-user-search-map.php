@@ -335,9 +335,9 @@ class KEO_User_Search_Map {
       background: var(--global-palette1);
       color: #fff;
     }
-    .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; display: flex; flex-direction: column; }
+    .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; display: flex; flex-direction: column; justify-content: space-between; }
     .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
-    .hws-widget .hws-card p.hws-card-addr { font-size: 12px; color: #555; margin-bottom: auto !important; }
+    .hws-card-addr { font-size: 12px; color: #555; }
     .hws-card-phone { font-size: 12px; }
     .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; font-weight: bold; }
     .hws-card-site { font-size: 12px; }
@@ -580,10 +580,14 @@ class KEO_User_Search_Map {
             card.innerHTML =
               '<div class="hws-card-num">' + (i + 1) + '</div>'
               + '<div class="hws-card-body">'
-              +   '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
-              +   '<p class="hws-card-addr">' + h(formatAddress(b)) + '</p>'
-              +   (b.phone ? '<p class="hws-card-phone"><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a></p>' : '')
-              +   (b.website ? '<p class="hws-card-site"><a href="' + a(b.website) + '" target="_blank" rel="noopener noreferrer">' + h(b.website.replace(/^https?:\/\//, '')) + '</a></p>' : '')
+              +   '<div class="hws-card-top">'
+              +     '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
+              +     '<p class="hws-card-addr">' + h(formatAddress(b)) + '</p>'
+              +   '</div>'
+              +   '<div class="hws-card-contact">'
+              +     (b.phone ? '<p class="hws-card-phone"><a href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a></p>' : '')
+              +     (b.website ? '<p class="hws-card-site"><a href="' + a(b.website) + '" target="_blank" rel="noopener noreferrer">' + h(b.website.replace(/^https?:\/\//, '')) + '</a></p>' : '')
+              +   '</div>'
               + '</div>'
               + (dist ? '<div class="hws-card-dist">' + h(dist) + '</div>' : '');
 
