@@ -3,14 +3,14 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.4.1
+ * Version:     1.5.0
  */
 
 if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION                = '1.4.1';
+  const VERSION                = '1.5.0';
   const SUGGEST_RL_IP          = 300;
   const SUGGEST_RL_GLOBAL      = 3000;
   const SUGGEST_RL_GLOBAL_MONTHLY = 80000;
@@ -184,6 +184,7 @@ class KEO_User_Search_Map {
           <tr><th>Shortcode</th><td><code>[helwacht_search]</code></td></tr>
           <tr><th>Ergebnisse pro Suche</th><td>Die <?php echo self::MAX_RESULTS; ?> nächsten verfügbaren Betriebe</td></tr>
           <tr><th>Autocomplete-Limit</th><td><?php echo self::SUGGEST_RL_IP; ?> pro IP / <?php echo self::SUGGEST_RL_GLOBAL; ?> global pro Tag</td></tr>
+          <tr><th>Karte</th><td>MapLibre GL JS + OpenFreeMap (token-frei)</td></tr>
         </tbody>
       </table>
     </div>
@@ -191,9 +192,10 @@ class KEO_User_Search_Map {
   }
 
   public function shortcode() {
-    if (!wp_style_is('leaflet', 'enqueued')) {
-      wp_enqueue_style('leaflet', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css', [], '1.9.4');
-      wp_enqueue_script('leaflet', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js', [], '1.9.4', true);
+    // MapLibre GL JS + OpenFreeMap vector tiles (no token required in the browser)
+    if (!wp_style_is('maplibre-gl', 'enqueued')) {
+      wp_enqueue_style('maplibre-gl', 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.css', [], '1.5.0');
+      wp_enqueue_script('maplibre-gl', 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.js', [], '1.5.0', true);
     }
 
     $uid         = 'hws-' . wp_unique_id();
@@ -314,7 +316,6 @@ class KEO_User_Search_Map {
       transition: border-color .15s;
     }
     .hws-card:hover { border-color: var(--global-palette1); }
-    /* Clickable cards (have coordinates) zoom the map on click */
     .hws-card--clickable { cursor: pointer; }
 
     /* Reset theme paragraph margins — !important beats .entry-content p etc. */
@@ -350,10 +351,15 @@ class KEO_User_Search_Map {
       color: #555; white-space: nowrap; padding-top: 2px;
     }
 
-    .hws-marker-search { font-size: 24px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3)); }
+    /* Map markers (custom HTML elements for MapLibre) */
+    .hws-marker-search {
+      font-size: 24px; line-height: 1; cursor: pointer;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
+    }
     .hws-marker-num {
-      width: 28px; height: 28px; background: var(--global-palette1); color: #fff;
-      border-radius: 50%; border: 2px solid #fff;
+      width: 28px; height: 28px; box-sizing: border-box;
+      background: var(--global-palette1); color: #fff;
+      border-radius: 50%; border: 2px solid #fff; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       font-size: 13px; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,.3);
     }
@@ -369,7 +375,7 @@ class KEO_User_Search_Map {
       }
 
       onReady(function () {
-        if (typeof L === 'undefined') { setTimeout(onReady, 50); return; }
+        if (typeof maplibregl === 'undefined') { setTimeout(onReady, 50); return; }
 
         const widget    = document.getElementById(<?php echo json_encode($uid); ?>);
         const input     = widget.querySelector('.hws-input');
@@ -383,26 +389,30 @@ class KEO_User_Search_Map {
 
         const SUGGEST_URL = <?php echo json_encode($suggest_url); ?>;
         const NEARBY_URL  = <?php echo json_encode($nearby_url); ?>;
+        const MAP_STYLE   = 'https://tiles.openfreemap.org/styles/liberty';
 
         let debounceTimer   = null;
-        let leafletMap      = null;
-        let leafletMarkers  = [];
+        let map             = null;
+        let markers         = [];   // all markers currently on the map
         let businessMarkers = [];   // markers indexed to match the result cards
         let selectedIndex   = -1;   // currently selected card, -1 = none
         let lastBounds      = null; // overview bounds to zoom back to on deselect
 
-        // Initialize map with Austria overview
-        leafletMap = L.map(mapEl).setView([47.5, 14.1], 7);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
-          maxZoom: 18,
-        }).addTo(leafletMap);
+        // Initialize map with Austria overview (note: MapLibre uses [lng, lat])
+        map = new maplibregl.Map({
+          container: mapEl,
+          style: MAP_STYLE,
+          center: [14.1, 47.6],
+          zoom: 6.4,
+          attributionControl: { compact: true },
+        });
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
         // Re-render map on window resize (e.g. crossing the 1100px breakpoint)
         let resizeTimer = null;
         window.addEventListener('resize', function () {
           clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(function () { if (leafletMap) leafletMap.invalidateSize(); }, 200);
+          resizeTimer = setTimeout(function () { if (map) map.resize(); }, 200);
         });
 
         // --- Autocomplete ---
@@ -499,8 +509,8 @@ class KEO_User_Search_Map {
             renderResults(data.data);
             contentEl.classList.add('hws-has-results');
             renderMap(data.data, lat, lng, label);
-            // Let the layout settle (grid heights, flex stretch) before Leaflet measures
-            setTimeout(function () { leafletMap.invalidateSize(); }, 80);
+            // Let the layout settle (grid heights, flex stretch) before MapLibre measures
+            setTimeout(function () { map.resize(); }, 80);
           } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
         }
 
@@ -540,14 +550,12 @@ class KEO_User_Search_Map {
 
                 if (selectedIndex === i) {
                   deselectCards();
-                  if (businessMarkers[i]) businessMarkers[i].closePopup();
-                  if (lastBounds && lastBounds.length > 1) {
-                    leafletMap.fitBounds(lastBounds, { padding: [40, 40], maxZoom: 14 });
-                  }
+                  closeMarkerPopup(businessMarkers[i]);
+                  if (lastBounds) map.fitBounds(lastBounds, { padding: 50, maxZoom: 14 });
                 } else {
                   selectCard(i);
-                  leafletMap.setView([b.latitude, b.longitude], 16);
-                  if (businessMarkers[i]) businessMarkers[i].openPopup();
+                  map.flyTo({ center: [b.longitude, b.latitude], zoom: 16 });
+                  openMarkerPopup(businessMarkers[i]);
                 }
 
                 if (window.innerWidth < 1100) {
@@ -574,46 +582,71 @@ class KEO_User_Search_Map {
           selectedIndex = -1;
         }
 
-        // --- Map ---
+        // --- Map (MapLibre GL JS) ---
+
+        function openMarkerPopup(marker) {
+          if (!marker) return;
+          const p = marker.getPopup();
+          if (p && !p.isOpen()) marker.togglePopup();
+        }
+        function closeMarkerPopup(marker) {
+          if (!marker) return;
+          const p = marker.getPopup();
+          if (p && p.isOpen()) marker.togglePopup();
+        }
 
         function renderMap(businesses, searchLat, searchLng, searchLabel) {
-          leafletMarkers.forEach(function (m) { m.remove(); });
-          leafletMarkers  = [];
+          markers.forEach(function (m) { m.remove(); });
+          markers         = [];
           businessMarkers = [];
 
-          const searchIcon = L.divIcon({
-            className: '', html: '<div class="hws-marker-search">📍</div>',
-            iconSize: [24, 28], iconAnchor: [12, 28], popupAnchor: [0, -28],
-          });
-          leafletMarkers.push(
-            L.marker([searchLat, searchLng], { icon: searchIcon })
-              .bindPopup(searchLabel ? '<strong>' + h(searchLabel) + '</strong>' : '<strong>Ihr Standort</strong>')
-              .addTo(leafletMap)
-          );
+          // Search-location pin
+          const searchEl = document.createElement('div');
+          searchEl.className = 'hws-marker-search';
+          searchEl.textContent = '📍';
+          const searchPopup = new maplibregl.Popup({ offset: 28, closeButton: true })
+            .setHTML(searchLabel ? '<strong>' + h(searchLabel) + '</strong>' : '<strong>Ihr Standort</strong>');
+          const searchMarker = new maplibregl.Marker({ element: searchEl, anchor: 'bottom' })
+            .setLngLat([searchLng, searchLat])
+            .setPopup(searchPopup)
+            .addTo(map);
+          markers.push(searchMarker);
 
-          const bounds = [[searchLat, searchLng]];
+          // Business markers + bounds
+          const bounds = new maplibregl.LngLatBounds();
+          bounds.extend([searchLng, searchLat]);
+          let businessCount = 0;
+
           businesses.forEach(function (b, i) {
             if (!b.latitude || !b.longitude) { businessMarkers[i] = null; return; }
-            const numIcon = L.divIcon({
-              className: '', html: '<div class="hws-marker-num">' + (i + 1) + '</div>',
-              iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -28],
-            });
+
+            const el = document.createElement('div');
+            el.className = 'hws-marker-num';
+            el.textContent = (i + 1);
+
             const addr = formatAddress(b);
-            const popup = '<strong>' + h(b.innung_name || '') + '</strong>'
+            const html = '<strong>' + h(b.innung_name || '') + '</strong>'
               + (addr ? '<br>' + h(addr) : '')
               + (b.phone ? '<br><a class="hws-popup-phone" href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>' : '');
-            const m = L.marker([b.latitude, b.longitude], { icon: numIcon }).bindPopup(popup).addTo(leafletMap);
-            leafletMarkers.push(m);
+            const popup = new maplibregl.Popup({ offset: 32, closeButton: true }).setHTML(html);
+
+            const m = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+              .setLngLat([b.longitude, b.latitude])
+              .setPopup(popup)
+              .addTo(map);
+
+            markers.push(m);
             businessMarkers[i] = m;
-            bounds.push([b.latitude, b.longitude]);
+            bounds.extend([b.longitude, b.latitude]);
+            businessCount++;
           });
 
-          if (bounds.length > 1) {
+          if (businessCount > 0) {
             lastBounds = bounds;
-            leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+            map.fitBounds(bounds, { padding: 50, maxZoom: 14 });
           } else {
             lastBounds = null;
-            leafletMap.setView([searchLat, searchLng], 13);
+            map.flyTo({ center: [searchLng, searchLat], zoom: 13 });
           }
         }
 
