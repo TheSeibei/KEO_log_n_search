@@ -581,7 +581,7 @@ class KEO_User_Search_Map {
 
                 if (selectedIndex === i) {
                   deselectCards();
-                  closeMarkerPopup(businessMarkers);
+                  closeMarkerPopup(businessMarkers[i]);
                   if (lastBounds) map.fitBounds(lastBounds, { padding: 50, maxZoom: 14 });
                 } else {
                   selectCard(i);
@@ -621,11 +621,9 @@ class KEO_User_Search_Map {
           if (p && !p.isOpen()) marker.togglePopup();
         }
         function closeMarkerPopup(marker) {
-          marker.foreach(function (mark)) {
-            if (!mark) return;
-            const p = mark.getPopup();
-            if (p && p.isOpen()) mark.togglePopup();
-          }
+          if (!marker) return;
+          const p = marker.getPopup();
+          if (p && p.isOpen()) marker.togglePopup();
         }
 
         function renderMap(businesses, searchLat, searchLng, searchLabel) {
