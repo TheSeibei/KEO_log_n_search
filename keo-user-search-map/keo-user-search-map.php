@@ -330,8 +330,7 @@ class KEO_User_Search_Map {
     .hws-card-num {
       flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box;
       background: #fff; color: var(--global-palette1);
-      border: 2px; border-radius: 50%;
-      border-color: var(--global-palette1);
+      border: 2px solid var(--global-palette1); border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: bold; margin-top: 2px;
     }
