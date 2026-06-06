@@ -409,7 +409,7 @@ class KEO_User_Search_Map {
         if (typeof maplibregl === 'undefined') { setTimeout(onReady, 50); return; }
 
         const widget    = document.getElementById(<?php echo json_encode($uid); ?>);
-        const input     = sanitizeSearchInput(widget.querySelector('.hws-input'));
+        const input     = widget.querySelector('.hws-input');
         const suggestions = widget.querySelector('.hws-suggestions');
         const searchBtn = widget.querySelector('.hws-search-btn');
         const gpsBtn    = widget.querySelector('.hws-gps-btn');
@@ -450,7 +450,7 @@ class KEO_User_Search_Map {
 
         input.addEventListener('input', function () {
           clearTimeout(debounceTimer);
-          const q = input.value.trim();
+          const q = sanitizeSearchInput(input.value.trim());
           if (q.length < 3) { hideSuggestions(); return; }
           debounceTimer = setTimeout(function () { fetchSuggestions(q); }, 300);
         });
@@ -484,7 +484,7 @@ class KEO_User_Search_Map {
     }
 
         async function searchByText(text) {
-          text = (text || '').trim();
+          text = sanitizeSearchInput((text || '').trim());
           if (text.length < 2) return;
           showStatus('Adresse wird gesucht …');
           hideSuggestions();
