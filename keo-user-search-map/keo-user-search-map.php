@@ -3,14 +3,14 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.5.0
+ * Version:     1.5.2
  */
 
 if (!defined('ABSPATH')) exit;
 
 class KEO_User_Search_Map {
 
-  const VERSION                = '1.5.0';
+  const VERSION                = '1.5.2';
   const SUGGEST_RL_IP          = 300;
   const SUGGEST_RL_GLOBAL      = 3000;
   const SUGGEST_RL_GLOBAL_MONTHLY = 80000;
@@ -194,8 +194,8 @@ class KEO_User_Search_Map {
   public function shortcode() {
     // MapLibre GL JS + OpenFreeMap vector tiles (no token required in the browser)
     if (!wp_style_is('maplibre-gl', 'enqueued')) {
-      wp_enqueue_style('maplibre-gl', 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.css', [], '1.5.0');
-      wp_enqueue_script('maplibre-gl', 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.js', [], '1.5.0', true);
+      wp_enqueue_style('maplibre-gl', 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.css', [], '1.5.2');
+      wp_enqueue_script('maplibre-gl', 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.js', [], '1.5.2', true);
     }
 
     $uid         = 'hws-' . wp_unique_id();
@@ -278,8 +278,6 @@ class KEO_User_Search_Map {
     }
     .hws-status.hws-error { border-left-color: var(--global-palette1); background: #fff5f5; color: var(--global-palette1); }
 
-    /* Content: flex column by default (map on top, results below with gap).
-       At >=1100px with results: row-reverse (map right, cards left), equal heights. */
     .hws-content {
       margin-top: 16px;
       display: flex;
@@ -289,23 +287,22 @@ class KEO_User_Search_Map {
     .hws-map {
       height: 350px; border-radius: 8px; overflow: hidden; border: 1px solid #e0e0e0;
     }
-    /* Results as grid so all cards share equal height in the wide layout */
     .hws-results { display: grid; gap: 6px; }
     .hws-results:empty { display: none; }
 
     @media (min-width: 1100px) {
       .hws-content.hws-has-results {
         flex-direction: row-reverse;
-        align-items: stretch;       /* map stretches to match the cards' height */
+        align-items: stretch;
       }
       .hws-content.hws-has-results .hws-map {
-        flex: 0 0 calc(65% - 8px);  /* -8px so map + cards + 16px gap = 100% */
-        height: auto;               /* grows/shrinks with the cards */
+        flex: 0 0 calc(65% - 8px);
+        height: auto;
         min-height: 200px;
       }
       .hws-content.hws-has-results .hws-results {
         flex: 0 0 calc(35% - 8px);
-        grid-auto-rows: 1fr;        /* all cards equal height */
+        grid-auto-rows: 1fr;
       }
     }
 
@@ -318,7 +315,6 @@ class KEO_User_Search_Map {
     .hws-card:hover { border-color: var(--global-palette1); }
     .hws-card--clickable { cursor: pointer; }
 
-    /* Reset theme paragraph margins — !important beats .entry-content p etc. */
     .hws-widget .hws-card p {
       margin: 0 0 10px 0 !important;
       padding: 0 !important;
@@ -334,7 +330,6 @@ class KEO_User_Search_Map {
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: bold; margin-top: 2px;
     }
-    /* Selected card: invert the number circle */
     .hws-card--selected .hws-card-num {
       background: var(--global-palette1);
       color: #fff;
@@ -350,7 +345,6 @@ class KEO_User_Search_Map {
       color: #555; white-space: nowrap; padding-top: 2px;
     }
 
-    /* Map markers (custom HTML elements for MapLibre) */
     .hws-marker-search {
       font-size: 24px; line-height: 1; cursor: pointer;
       filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
@@ -366,8 +360,7 @@ class KEO_User_Search_Map {
       transition: opacity .15s;
     }
     .hws-marker-num:hover { opacity: .75; }
- 
-    /* MapLibre popup styling */
+
     .hws-widget .maplibregl-popup-content {
       color: #1a1a1a;
       font-family: inherit;
@@ -392,9 +385,8 @@ class KEO_User_Search_Map {
     }
     .hws-widget .maplibregl-popup-close-button:hover {
       opacity: .45;
-      background: none; /* opacity only, no gradient or background change */
+      background: none;
     }
-    /* Phone link inside map popups: bold + brand colour */
     .hws-widget .hws-popup-phone { color: var(--global-palette1); font-weight: bold; text-decoration: none; }
     </style>
 
@@ -422,24 +414,25 @@ class KEO_User_Search_Map {
         const NEARBY_URL  = <?php echo json_encode($nearby_url); ?>;
         const MAP_STYLE   = 'https://tiles.openfreemap.org/styles/liberty';
 
-        let debounceTimer   = null;
-        let map             = null;
-        let markers         = [];   // all markers currently on the map
-        let businessMarkers = [];   // markers indexed to match the result cards
-        let selectedIndex   = -1;   // currently selected card, -1 = none
-        let lastBounds      = null; // overview bounds to zoom back to on deselect
+        let debounceTimer    = null;
+        let map              = null;
+        let markers          = [];
+        let businessMarkers  = [];
+        let selectedIndex    = -1;
+        let lastBounds       = null;
+        let lastSearchLngLat = null; // fallback center when no business bounds
 
-        // Initialize map with Austria overview (note: MapLibre uses [lng, lat])
+        // FIX 1: attributionControl: false + compact control added manually
         map = new maplibregl.Map({
           container: mapEl,
           style: MAP_STYLE,
           center: [14.1, 47.6],
           zoom: 6.4,
-          attributionControl: { compact: true },
+          attributionControl: false,
         });
+        map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
-        // Re-render map on window resize (e.g. crossing the 1100px breakpoint)
         let resizeTimer = null;
         window.addEventListener('resize', function () {
           clearTimeout(resizeTimer);
@@ -540,13 +533,19 @@ class KEO_User_Search_Map {
             renderResults(data.data);
             contentEl.classList.add('hws-has-results');
             renderMap(data.data, lat, lng, label);
-            // Let the layout settle (grid heights, flex stretch) before MapLibre measures
-            setTimeout(function () { map.resize(); }, 80);
+            // FIX 2: resize first so MapLibre knows its real dimensions,
+            // then apply fitBounds/flyTo — avoids off-center zoom on wide layout
+            setTimeout(function () {
+              map.resize();
+              if (lastBounds) {
+                map.fitBounds(lastBounds, { padding: 50, maxZoom: 14 });
+              } else if (lastSearchLngLat) {
+                map.flyTo({ center: lastSearchLngLat, zoom: 13 });
+              }
+            }, 80);
           } catch (err) { showStatus('Verbindungsfehler. Bitte später erneut versuchen.', true); }
         }
 
-        // Build an address with commas from the individual fields
-        // e.g. "Andersengasse 21, 1120 Wien, Österreich"
         function formatAddress(b) {
           const parts = [];
           if (b.address) parts.push(b.address);
@@ -573,7 +572,6 @@ class KEO_User_Search_Map {
               + '</div>'
               + (dist ? '<div class="hws-card-dist">' + h(dist) + '</div>' : '');
 
-            // Click toggles selection: select → zoom in; click again → deselect → overview
             if (b.latitude && b.longitude) {
               card.classList.add('hws-card--clickable');
               card.addEventListener('click', function (e) {
@@ -621,23 +619,13 @@ class KEO_User_Search_Map {
           const p = marker.getPopup();
           if (p && !p.isOpen()) marker.togglePopup();
         }
-        
-        /*function closeMarkerPopup(marker) {
-          if (!marker) return;
-          const p = marker.getPopup();
-          if (p && p.isOpen()) marker.togglePopup();
-        }*/
 
-        function closeAllMarkerPopups(businessMarkers) {
-          if (!businessMarkers || businessMarkers.length === 0) return;
-
-          businessMarkers.forEach(marker => {
+        function closeAllMarkerPopups(bMarkers) {
+          if (!bMarkers || !bMarkers.length) return;
+          bMarkers.forEach(function (marker) {
             if (!marker) return;
-            
             const p = marker.getPopup();
-            if (p && p.isOpen()) {
-              marker.togglePopup();
-            }
+            if (p && p.isOpen()) marker.togglePopup();
           });
         }
 
@@ -646,7 +634,9 @@ class KEO_User_Search_Map {
           markers         = [];
           businessMarkers = [];
 
-          // Search-location pin
+          // Store search center for fallback flyTo after resize
+          lastSearchLngLat = [searchLng, searchLat];
+
           const searchEl = document.createElement('div');
           searchEl.className = 'hws-marker-search';
           searchEl.textContent = '📍';
@@ -658,7 +648,6 @@ class KEO_User_Search_Map {
             .addTo(map);
           markers.push(searchMarker);
 
-          // Business markers + bounds
           const bounds = new maplibregl.LngLatBounds();
           bounds.extend([searchLng, searchLat]);
           let businessCount = 0;
@@ -687,13 +676,9 @@ class KEO_User_Search_Map {
             businessCount++;
           });
 
-          if (businessCount > 0) {
-            lastBounds = bounds;
-            map.fitBounds(bounds, { padding: 50, maxZoom: 14 });
-          } else {
-            lastBounds = null;
-            map.flyTo({ center: [searchLng, searchLat], zoom: 13 });
-          }
+          // FIX 2: store bounds but do NOT call fitBounds here —
+          // searchNearby applies the view after map.resize() so dimensions are correct
+          lastBounds = businessCount > 0 ? bounds : null;
         }
 
         // --- UI helpers ---
