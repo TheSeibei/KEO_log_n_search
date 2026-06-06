@@ -3,7 +3,7 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.5.2
+ * Version:     1.5.3
  */
 
 if (!defined('ABSPATH')) exit;
@@ -237,7 +237,7 @@ class KEO_User_Search_Map {
     </div>
 
     <style>
-    .hws-widget { font-family: inherit; width: 100%; }
+    .hws-widget { font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif; width: 100%; }
 
     .hws-input-row { display: flex; gap: 8px; align-items: stretch; }
     .hws-input-wrap { position: relative; flex: 1; }
@@ -339,7 +339,7 @@ class KEO_User_Search_Map {
     .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
     .hws-card-addr { font-size: 12px; color: #555; }
     .hws-card-phone { font-size: 12px; }
-    .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; font-weight: bold;}
+    .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; font-weight: bold; }
     .hws-card-site { font-size: 12px; }
     .hws-card-dist {
       flex-shrink: 0; font-size: 12px; font-weight: bold;
