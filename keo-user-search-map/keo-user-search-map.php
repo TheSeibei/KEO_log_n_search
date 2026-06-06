@@ -354,13 +354,45 @@ class KEO_User_Search_Map {
     .hws-marker-search {
       font-size: 24px; line-height: 1; cursor: pointer;
       filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
+      transition: opacity .15s;
     }
+    .hws-marker-search:hover { opacity: .75; }
     .hws-marker-num {
       width: 28px; height: 28px; box-sizing: border-box;
       background: var(--global-palette1); color: #fff;
       border-radius: 50%; border: 2px solid #fff; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       font-size: 13px; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+      transition: opacity .15s;
+    }
+    .hws-marker-num:hover { opacity: .75; }
+ 
+    /* MapLibre popup styling */
+    .hws-widget .maplibregl-popup-content {
+      color: #1a1a1a;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.4;
+      padding: 10px 28px 10px 12px;
+      border-radius: 6px;
+      box-shadow: 0 3px 14px rgba(0,0,0,.2);
+    }
+    .hws-widget .maplibregl-popup-close-button {
+      color: #1a1a1a;
+      font-size: 18px;
+      font-weight: bold;
+      right: 6px;
+      top: 5px;
+      line-height: 1;
+      padding: 0 3px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .hws-widget .maplibregl-popup-close-button:hover {
+      opacity: .45;
+      background: none; /* opacity only, no gradient or background change */
     }
     /* Phone link inside map popups: bold + brand colour */
     .hws-widget .hws-popup-phone { color: var(--global-palette1); font-weight: bold; text-decoration: none; }
