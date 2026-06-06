@@ -335,7 +335,7 @@ class KEO_User_Search_Map {
       background: var(--global-palette1);
       color: #fff;
     }
-    .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; display: flex; flex-direction: column; justify-content: space-between; }
+    .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; display: flex; align-self: stretch; flex-direction: column; justify-content: space-between; }
     .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
     .hws-card-addr { font-size: 12px; color: #555; }
     .hws-card-phone { font-size: 12px; }
