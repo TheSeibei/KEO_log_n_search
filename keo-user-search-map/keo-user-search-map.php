@@ -409,7 +409,7 @@ class KEO_User_Search_Map {
         if (typeof maplibregl === 'undefined') { setTimeout(onReady, 50); return; }
 
         const widget    = document.getElementById(<?php echo json_encode($uid); ?>);
-        const input     = widget.querySelector('.hws-input');
+        const input     = sanitizeSearchInput(widget.querySelector('.hws-input'));
         const suggestions = widget.querySelector('.hws-suggestions');
         const searchBtn = widget.querySelector('.hws-search-btn');
         const gpsBtn    = widget.querySelector('.hws-gps-btn');
@@ -472,6 +472,16 @@ class KEO_User_Search_Map {
             renderSuggestions(data);
           } catch (err) { hideSuggestions(); }
         }
+
+        function sanitizeSearchInput(rawInput) {
+        if (typeof rawInput !== 'string') return '';
+
+        return rawInput
+            .trim()
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/[^a-zA-Z0-9äöüÄÖÜß\s,\.-]/g, ''); 
+    }
 
         async function searchByText(text) {
           text = (text || '').trim();
