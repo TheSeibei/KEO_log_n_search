@@ -3,7 +3,7 @@
  * Plugin Name: KEO User Search Map
  * Description: Public search widget – find the nearest available Helwacht businesses.
  *              Requires the Helwacht Availability plugin on the same installation.
- * Version:     1.5.1
+ * Version:     1.5.0
  */
 
 if (!defined('ABSPATH')) exit;
@@ -329,15 +329,15 @@ class KEO_User_Search_Map {
 
     .hws-card-num {
       flex-shrink: 0; width: 26px; height: 26px; box-sizing: border-box;
-      background: var(--global-palette1); color: #fff;
+      background: #fff; color: var(--global-palette1);
       border: 2px solid transparent; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: bold; margin-top: 2px;
     }
     /* Selected card: invert the number circle */
     .hws-card--selected .hws-card-num {
-      background: #fff;
-      color: var(--global-palette1);
+      background: var(--global-palette1);
+      color: #fff;
       border-color: var(--global-palette1);
     }
     .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; }
@@ -355,60 +355,16 @@ class KEO_User_Search_Map {
     .hws-marker-search {
       font-size: 24px; line-height: 1; cursor: pointer;
       filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
-      transition: opacity .15s;
     }
-    .hws-marker-search:hover { opacity: .75; }
     .hws-marker-num {
       width: 28px; height: 28px; box-sizing: border-box;
       background: var(--global-palette1); color: #fff;
       border-radius: 50%; border: 2px solid #fff; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       font-size: 13px; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,.3);
-      transition: opacity .15s;
-    }
-    .hws-marker-num:hover { opacity: .75; }
-
-    /* MapLibre popup styling */
-    .hws-widget .maplibregl-popup-content {
-      color: #1a1a1a;
-      font-family: inherit;
-      font-size: 13px;
-      line-height: 1.4;
-      padding: 10px 28px 10px 12px;
-      border-radius: 6px;
-      box-shadow: 0 3px 14px rgba(0,0,0,.2);
-    }
-    .hws-widget .maplibregl-popup-close-button {
-      color: #1a1a1a;
-      font-size: 18px;
-      font-weight: bold;
-      right: 6px;
-      top: 5px;
-      line-height: 1;
-      padding: 0 3px;
-      background: none;
-      border: none;
-      cursor: pointer;
-      transition: opacity .15s;
-    }
-    .hws-widget .maplibregl-popup-close-button:hover {
-      opacity: .45;
-      background: none; /* opacity only, no gradient or background change */
     }
     /* Phone link inside map popups: bold + brand colour */
     .hws-widget .hws-popup-phone { color: var(--global-palette1); font-weight: bold; text-decoration: none; }
-
-    /* Popup animations */
-    .hws-widget .maplibregl-popup { animation: hws-popup-in .22s ease; }
-    .hws-widget .maplibregl-popup.hws-popup-exit { animation: hws-popup-out .22s ease forwards; pointer-events: none; }
-    @keyframes hws-popup-in {
-      from { opacity: 0; transform: translateY(5px) scale(.97); }
-      to   { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    @keyframes hws-popup-out {
-      from { opacity: 1; transform: translateY(0) scale(1); }
-      to   { opacity: 0; transform: translateY(5px) scale(.97); }
-    }
     </style>
 
     <script>
@@ -448,9 +404,8 @@ class KEO_User_Search_Map {
           style: MAP_STYLE,
           center: [14.1, 47.6],
           zoom: 6.4,
-          attributionControl: false,  // add compact version manually below
+          attributionControl: { compact: true },
         });
-        map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
         // Re-render map on window resize (e.g. crossing the 1100px breakpoint)
@@ -595,15 +550,12 @@ class KEO_User_Search_Map {
 
                 if (selectedIndex === i) {
                   deselectCards();
-                  closeAllPopupsAnimated(function () {
-                    if (lastBounds) map.fitBounds(lastBounds, { padding: 50, maxZoom: 14 });
-                  });
+                  closeMarkerPopup(businessMarkers[i]);
+                  if (lastBounds) map.fitBounds(lastBounds, { padding: 50, maxZoom: 14 });
                 } else {
                   selectCard(i);
-                  closeAllPopupsAnimated(function () {
-                    map.flyTo({ center: [b.longitude, b.latitude], zoom: 16 });
-                    openMarkerPopup(businessMarkers[i]);
-                  });
+                  map.flyTo({ center: [b.longitude, b.latitude], zoom: 16 });
+                  openMarkerPopup(businessMarkers[i]);
                 }
 
                 if (window.innerWidth < 1100) {
@@ -637,20 +589,10 @@ class KEO_User_Search_Map {
           const p = marker.getPopup();
           if (p && !p.isOpen()) marker.togglePopup();
         }
-
-        // Close all currently open popups with a fade-out animation, then call cb
-        function closeAllPopupsAnimated(cb) {
-          const popupEls = mapEl.querySelectorAll('.maplibregl-popup');
-          if (!popupEls.length) { if (cb) cb(); return; }
-          popupEls.forEach(function (el) { el.classList.add('hws-popup-exit'); });
-          setTimeout(function () {
-            // Actually remove popups after animation
-            markers.forEach(function (m) {
-              const p = m.getPopup();
-              if (p && p.isOpen()) m.togglePopup();
-            });
-            if (cb) cb();
-          }, 240);
+        function closeMarkerPopup(marker) {
+          if (!marker) return;
+          const p = marker.getPopup();
+          if (p && p.isOpen()) marker.togglePopup();
         }
 
         function renderMap(businesses, searchLat, searchLng, searchLabel) {
