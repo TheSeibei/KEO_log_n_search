@@ -580,7 +580,7 @@ class KEO_User_Search_Map {
             card.innerHTML =
               '<div class="hws-card-num">' + (i + 1) + '</div>'
               + '<div class="hws-card-body">'
-              +   '<div class="hws-card-top">'
+              +   '<div class="hws-card-top" style="margin-bottom:5px">'
               +     '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
               +     '<p class="hws-card-addr">' + h(formatAddress(b)) + '</p>'
               +   '</div>'
