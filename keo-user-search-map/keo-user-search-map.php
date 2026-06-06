@@ -450,7 +450,7 @@ class KEO_User_Search_Map {
 
         input.addEventListener('input', function () {
           clearTimeout(debounceTimer);
-          const q = sanitizeSearchInput(input.value.trim());
+          const q = input.value.trim();
           if (q.length < 3) { hideSuggestions(); return; }
           debounceTimer = setTimeout(function () { fetchSuggestions(q); }, 300);
         });
@@ -473,18 +473,8 @@ class KEO_User_Search_Map {
           } catch (err) { hideSuggestions(); }
         }
 
-        function sanitizeSearchInput(rawInput) {
-        if (typeof rawInput !== 'string') return '';
-
-        return rawInput
-            .trim()
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/[^a-zA-Z0-9äöüÄÖÜß\s,\.-]/g, ''); 
-    }
-
         async function searchByText(text) {
-          text = sanitizeSearchInput((text || '').trim());
+          text = (text || '').trim();
           if (text.length < 2) return;
           showStatus('Adresse wird gesucht …');
           hideSuggestions();
