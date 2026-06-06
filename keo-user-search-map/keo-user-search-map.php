@@ -337,7 +337,7 @@ class KEO_User_Search_Map {
     }
     .hws-card-body { flex: 1; min-width: 0; line-height: 1.3; display: flex; align-self: stretch; flex-direction: column; justify-content: space-between; }
     .hws-card-name { font-weight: bold; font-size: 14px; color: var(--global-palette8); }
-    .hws-card-addr { font-size: 12px; color: #555; }
+    .hws-card-addr { font-size: 12px; color: #555; margin-bottom: 5px;}
     .hws-card-phone { font-size: 12px; }
     .hws-card-phone a, .hws-card-site a { color: var(--global-palette1); text-decoration: none; font-weight: bold; }
     .hws-card-site { font-size: 12px; }
@@ -580,7 +580,7 @@ class KEO_User_Search_Map {
             card.innerHTML =
               '<div class="hws-card-num">' + (i + 1) + '</div>'
               + '<div class="hws-card-body">'
-              +   '<div class="hws-card-top" style="margin-bottom:5px">'
+              +   '<div class="hws-card-top">'
               +     '<p class="hws-card-name">' + h(b.innung_name || '–') + '</p>'
               +     '<p class="hws-card-addr">' + h(formatAddress(b)) + '</p>'
               +   '</div>'
