@@ -442,7 +442,7 @@ class KEO_User_Search_Map {
             'get',
             `name:${language}`
         ]);
-        map.setLayoutProperty('lwater_label', 'text-field', [
+        map.setLayoutProperty('water_label', 'text-field', [
             'get',
             `name:${language}`
         ]);    
