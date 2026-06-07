@@ -413,7 +413,7 @@ class KEO_User_Search_Map {
 
         const SUGGEST_URL = <?php echo json_encode($suggest_url); ?>;
         const NEARBY_URL  = <?php echo json_encode($nearby_url); ?>;
-        const MAP_STYLE   = 'https://tiles.openfreemap.org/styles/liberty';
+        const MAP_STYLE   = 'https://tiles.openfreemap.org/styles/3d';
 
         let debounceTimer    = null;
         let map              = null;
