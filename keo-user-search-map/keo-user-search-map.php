@@ -444,19 +444,12 @@ class KEO_User_Search_Map {
         // switch language to German
         const language = 'de';
         map.on('style.load', () => {
-          map.setLayoutProperty('poi_label', 'text-field', [
-              'get',
-              `name:${language}`
-          ]);
-          map.setLayoutProperty('place_label', 'text-field', [
-              'get',
-              `name:${language}`
-          ]);
-          map.setLayoutProperty('water_label', 'text-field', [
-              'get',
-              `name:${language}`
-          ]);
-        }); 
+          style.layers.forEach(layer => {
+            if (layer.layout && layer.layout['text-field']) {
+              map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:de'], ['get', 'name']]);
+            }
+          });
+        });
 
         // --- Autocomplete ---
 
