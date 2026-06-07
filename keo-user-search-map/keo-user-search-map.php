@@ -431,6 +431,21 @@ class KEO_User_Search_Map {
           zoom: 5,
           attributionControl: false,
         });
+
+        // switch language to German
+        map.on('style.load', () => {
+        const layers = map.getStyle().layers;
+        layers.forEach((layer) => {
+            if (layer.layout && layer.layout['text-field']) {
+                map.setLayoutProperty(layer.id, 'text-field', [
+                    'coalesce',
+                    ['get', 'name:de'], // Try German first
+                    ['get', 'name']     // Fallback to local name
+                  ]);
+                }
+            });
+        });        
+
         map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
