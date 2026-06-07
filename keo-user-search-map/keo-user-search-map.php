@@ -442,6 +442,7 @@ class KEO_User_Search_Map {
         });
 
         // switch language to German
+        const language = 'de';
         map.on('style.load', () => {
           map.setLayoutProperty('poi_label', 'text-field', [
               'get',
