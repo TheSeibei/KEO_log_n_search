@@ -428,7 +428,7 @@ class KEO_User_Search_Map {
           container: mapEl,
           style: MAP_STYLE,
           center: [14.1, 47.6],
-          zoom: 2,
+          zoom: 5,
           attributionControl: false,
         });
         map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
