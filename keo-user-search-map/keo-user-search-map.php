@@ -443,11 +443,13 @@ class KEO_User_Search_Map {
 
         // switch language to German
         const language = 'de';
-        map.on('style.load', () => {
+        map.on('style.load', function () {
           var style = map.getStyle();
-          style.layers.forEach(layer => {
-            if (layer.layout && layer.layout['text-field']) {
-              map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:' + language], ['get', 'name']]);
+          style.layers.forEach(function (layer) {
+            if (layer.layout && layer.layout['text-field'] !== undefined) {
+              map.setLayoutProperty(layer.id, 'text-field', [
+                'coalesce', ['get', 'name:' + language], ['get', 'name']
+              ]);
               map.setLayoutProperty(layer.id, 'text-overflow', 'ellipsis');
             }
           });
