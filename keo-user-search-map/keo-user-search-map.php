@@ -432,21 +432,6 @@ class KEO_User_Search_Map {
           attributionControl: false,
         });
 
-        // switch language to German
-        const language = 'de'
-        map.setLayoutProperty('poi_label', 'text-field', [
-            'get',
-            `name:${language}`
-        ]);
-        map.setLayoutProperty('place_label', 'text-field', [
-            'get',
-            `name:${language}`
-        ]);
-        map.setLayoutProperty('water_label', 'text-field', [
-            'get',
-            `name:${language}`
-        ]);    
-
         map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
 
@@ -455,6 +440,22 @@ class KEO_User_Search_Map {
           clearTimeout(resizeTimer);
           resizeTimer = setTimeout(function () { if (map) map.resize(); }, 200);
         });
+
+        // switch language to German
+        map.on('style.load', () => {
+          map.setLayoutProperty('poi_label', 'text-field', [
+              'get',
+              `name:${language}`
+          ]);
+          map.setLayoutProperty('place_label', 'text-field', [
+              'get',
+              `name:${language}`
+          ]);
+          map.setLayoutProperty('water_label', 'text-field', [
+              'get',
+              `name:${language}`
+          ]);
+        }); 
 
         // --- Autocomplete ---
 
