@@ -531,7 +531,7 @@ class KEO_User_Search_Map {
           );
         });
 
-        // --- Search + results ---
+        // --- Search and results ---
 
         async function searchNearby(lat, lng, label) {
           showStatus('Suche nach verfügbaren Betrieben …');
