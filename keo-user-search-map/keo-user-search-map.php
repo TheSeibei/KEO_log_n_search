@@ -444,9 +444,10 @@ class KEO_User_Search_Map {
         // switch language to German
         const language = 'de';
         map.on('style.load', () => {
+          var style = map.getStyle();
           style.layers.forEach(layer => {
             if (layer.layout && layer.layout['text-field']) {
-              map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:de'], ['get', 'name']]);
+              map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:' + language], ['get', 'name']]);
             }
           });
         });
