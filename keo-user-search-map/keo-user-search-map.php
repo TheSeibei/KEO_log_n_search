@@ -466,7 +466,7 @@ class KEO_User_Search_Map {
           if (e.key === 'Escape') hideSuggestions();
         });
 
-        searchBtn.addEventListener('click', function () { hideSuggestions(); searchByText(input.value); });
+        searchBtn.addEventListener('click', function () { searchBtn.blur(); hideSuggestions(); searchByText(input.value); });
 
         document.addEventListener('click', function (e) { if (!widget.contains(e.target)) hideSuggestions(); });
 
