@@ -448,6 +448,7 @@ class KEO_User_Search_Map {
           style.layers.forEach(layer => {
             if (layer.layout && layer.layout['text-field']) {
               map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:' + language], ['get', 'name']]);
+              map.setLayoutProperty(layer.id, 'text-overflow', 'ellipsis');
             }
           });
         });
