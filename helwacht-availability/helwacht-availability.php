@@ -171,7 +171,7 @@ class Helwacht_Availability {
   }
 
   private function save_branches($user_id, array $branches) {
-    update_user_meta($user_id, self::META_BRANCHES, wp_json_encode($branches));
+    update_user_meta($user_id, self::META_BRANCHES, wp_json_encode($branches, JSON_UNESCAPED_UNICODE));
   }
 
   /**
@@ -917,7 +917,7 @@ function helwacht_save_user_fields($user_id) {
     }
   }
 
-  update_user_meta($user_id, 'helwacht_branches', wp_json_encode($branches));
+  update_user_meta($user_id, 'helwacht_branches', wp_json_encode($branches, JSON_UNESCAPED_UNICODE));
 }
 
 new Helwacht_Availability();
