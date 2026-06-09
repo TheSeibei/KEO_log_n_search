@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Helwacht Availability
  * Description: Members can toggle availability; exposes a JSON REST endpoint for Helwacht.
- * Version: 0.3.6
+ * Version: 0.4.0
  */
 
 if (!defined('ABSPATH')) exit;
@@ -22,15 +22,15 @@ class Helwacht_Availability {
   const META_GEOCODED_AT         = 'helwacht_geocoded_at';
   const META_GEOCODED_HASH       = 'helwacht_geocoded_hash';
   const META_GEOCODED_SOURCE     = 'helwacht_geocoded_source';
+  const META_BRANCHES            = 'helwacht_branches';
   const OPTION_API_KEY           = 'helwacht_api_key';
   const OPTION_MAPBOX_TOKEN      = 'helwacht_mapbox_token';
   const DEFAULT_COUNTRY          = 'Österreich';
   const DEFAULT_COUNTRY_CODE     = 'at';
   const MAX_QUERY_LENGTH        = 200;
-  // Rate limiting for geocoding (protects against Mapbox costs / API spam)
-  const RATE_LIMIT_IP_PER_DAY       = 100;    // max geocoding searches per IP per day
-  const RATE_LIMIT_GLOBAL_PER_DAY   = 1000;   // max geocoding searches across all IPs per day
-  const RATE_LIMIT_GLOBAL_PER_MONTH = 20000;  // monthly hard cap (Mapbox free tier: 100k/month shared with search plugin)
+  const RATE_LIMIT_IP_PER_DAY       = 100;
+  const RATE_LIMIT_GLOBAL_PER_DAY   = 1000;
+  const RATE_LIMIT_GLOBAL_PER_MONTH = 20000;
 
   public function __construct() {
     add_action('rest_api_init', [$this, 'register_routes']);
@@ -64,35 +64,24 @@ class Helwacht_Availability {
   public function rest_permission(\WP_REST_Request $request) {
     $stored = get_option(self::OPTION_API_KEY);
     $key = $request->get_header('x-api-key');
-
-    if (!$key) {
-      $key = $request->get_param('key');
-    }
-
+    if (!$key) $key = $request->get_param('key');
     return is_string($stored) && $stored !== '' && hash_equals($stored, (string) $key);
   }
 
   public function rest_get_availability(\WP_REST_Request $request) {
-    $filters = $this->get_filters($request);
+    $filters    = $this->get_filters($request);
     $search_query = $this->get_search_query($request);
     $user_query_filters = $this->get_user_query_filters($filters);
 
-    $args = [
-      'fields' => ['ID', 'display_name', 'user_email'],
-    ];
+    $args = ['fields' => ['ID', 'display_name', 'user_email']];
 
     $meta_query = [
       'relation' => 'AND',
-      [
-        'key'   => self::META_AVAILABLE,
-        'value' => '1',
-      ],
+      ['key' => self::META_AVAILABLE, 'value' => '1'],
     ];
-
     foreach ($user_query_filters['meta'] as $filter) {
       $meta_query[] = $filter;
     }
-
     $args['meta_query'] = $meta_query;
 
     if (!empty($user_query_filters['search'])) {
@@ -104,8 +93,6 @@ class Helwacht_Availability {
     $available = [];
     $search_coordinates = null;
 
-    // Direct coordinates (e.g. from GPS) bypass geocoding and rate limiting entirely.
-    // lat/lng take precedence over q when both are supplied.
     $direct_lat = $request->get_param('lat');
     $direct_lng = $request->get_param('lng');
 
@@ -114,71 +101,173 @@ class Helwacht_Availability {
         'latitude'  => (float) $direct_lat,
         'longitude' => (float) $direct_lng,
       ];
-      $search_query = ''; // prevent q from being geocoded
+      $search_query = '';
     }
 
     if ($search_query !== '') {
-      // Check the limits before the (billable) Mapbox call.
-      // Only requests with q count, i.e. only those that are actually geocoded.
       $rate_limit_error = $this->enforce_geocode_rate_limit();
-
-      if (is_wp_error($rate_limit_error)) {
-        return $rate_limit_error;
-      }
+      if (is_wp_error($rate_limit_error)) return $rate_limit_error;
 
       $search_coordinates = $this->geocode_address($search_query);
-
       if (is_wp_error($search_coordinates)) {
-        return [
-          'code'    => 'helwacht_geocode_failed',
-          'message' => 'Adresse konnte nicht verarbeitet werden.',
-        ];
+        return ['code' => 'helwacht_geocode_failed', 'message' => 'Adresse konnte nicht verarbeitet werden.'];
       }
     }
 
     foreach ($users as $u) {
-      $record = $this->build_availability_record($u, $search_coordinates);
-
-      if (!$this->record_matches_filters($record, $filters)) {
-        continue;
+      // Main location
+      $main = $this->build_availability_record($u, $search_coordinates);
+      if ($this->record_matches_filters($main, $filters)) {
+        $available[] = $main;
       }
 
-      $available[] = $record;
+      // Branch locations
+      $branches = $this->get_branches($u->ID);
+      foreach ($branches as $idx => $branch) {
+        $record = $this->build_branch_record($u, $branch, $idx, $search_coordinates);
+        if ($this->record_matches_filters($record, $filters)) {
+          $available[] = $record;
+        }
+      }
     }
 
     if ($search_coordinates) {
       usort($available, function ($a, $b) {
-        $a_distance = array_key_exists('distance_km', $a) ? $a['distance_km'] : null;
-        $b_distance = array_key_exists('distance_km', $b) ? $b['distance_km'] : null;
-
-        if ($a_distance === null && $b_distance === null) {
-          return 0;
-        }
-
-        if ($a_distance === null) {
-          return 1;
-        }
-
-        if ($b_distance === null) {
-          return -1;
-        }
-
-        return $a_distance <=> $b_distance;
+        $ad = array_key_exists('distance_km', $a) ? $a['distance_km'] : null;
+        $bd = array_key_exists('distance_km', $b) ? $b['distance_km'] : null;
+        if ($ad === null && $bd === null) return 0;
+        if ($ad === null) return 1;
+        if ($bd === null) return -1;
+        return $ad <=> $bd;
       });
     }
 
     return [
-      'generated_at'       => current_time('c'),
-      'count'              => count($available),
-      'filters'            => !empty($filters) ? $filters : null,
-      'query'              => $search_query !== '' ? $search_query : null,
-      'query_coordinates'  => $search_coordinates ? [
+      'generated_at'      => current_time('c'),
+      'count'             => count($available),
+      'filters'           => !empty($filters) ? $filters : null,
+      'query'             => $search_query !== '' ? $search_query : null,
+      'query_coordinates' => $search_coordinates ? [
         'latitude'  => $search_coordinates['latitude'],
         'longitude' => $search_coordinates['longitude'],
       ] : null,
-      'data'               => $available,
+      'data' => $available,
     ];
   }
+
+  // -------------------------------------------------------------------------
+  // Branch helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Returns the parsed branches array for a user.
+   * Each branch: { address, postal_code, city, phone, website, lat, lng, geocoded_hash }
+   */
+  private function get_branches($user_id) {
+    $raw = get_user_meta($user_id, self::META_BRANCHES, true);
+    if (!$raw || !is_string($raw)) return [];
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+  }
+
+  private function save_branches($user_id, array $branches) {
+    update_user_meta($user_id, self::META_BRANCHES, wp_json_encode($branches));
+  }
+
+  /**
+   * Build a record for one branch, inheriting phone/website from main if empty.
+   */
+  private function build_branch_record($u, array $branch, $idx, $search_coordinates = null) {
+    $address     = trim((string) ($branch['address']     ?? ''));
+    $postal_code = trim((string) ($branch['postal_code'] ?? ''));
+    $city        = trim((string) ($branch['city']        ?? ''));
+    $country     = self::DEFAULT_COUNTRY;
+    $full_address = $this->build_full_address($address, $postal_code, $city, $country);
+
+    // Inherit phone/website from main user if branch has none
+    $phone   = trim((string) ($branch['phone']   ?? ''));
+    $website = trim((string) ($branch['website'] ?? ''));
+    if ($phone === '') {
+      $phone = $this->format_phone_international(get_user_meta($u->ID, self::META_PHONE, true));
+    } else {
+      $phone = $this->format_phone_international($phone);
+    }
+    if ($website === '') {
+      $website = (string) get_user_meta($u->ID, self::META_WEBSITE, true);
+    }
+
+    $record = [
+      'innung_id'              => (string) $u->ID . '_branch_' . $idx,
+      'innung_name'            => $this->get_innung_name($u->ID, $u->display_name),
+      'innung_billing_address' => $this->build_innung_billing_address($u->ID),
+      'phone'                  => $phone,
+      'first_name'             => get_user_meta($u->ID, 'first_name', true),
+      'last_name'              => get_user_meta($u->ID, 'last_name', true),
+      'address'                => $address,
+      'postal_code'            => $postal_code,
+      'city'                   => $city,
+      'country'                => $country,
+      'full_address'           => $full_address,
+      'website'                => $website,
+      'available'              => true,
+      'last_update'            => get_user_meta($u->ID, self::META_LASTUPDATE, true),
+      'is_branch'              => true,
+    ];
+
+    if ($search_coordinates) {
+      $coords = $this->get_or_geocode_branch_coordinates($u->ID, $idx, $branch, $full_address);
+      if (is_wp_error($coords)) {
+        $record['distance_km'] = null;
+        $record['latitude']    = null;
+        $record['longitude']   = null;
+      } else {
+        $record['distance_km'] = $this->calculate_distance_km(
+          $search_coordinates['latitude'],
+          $search_coordinates['longitude'],
+          $coords['latitude'],
+          $coords['longitude']
+        );
+        $record['latitude']  = $coords['latitude'];
+        $record['longitude'] = $coords['longitude'];
+      }
+    }
+
+    return $record;
+  }
+
+  /**
+   * Geocoding cache for branches: stored directly in the branch array in user meta.
+   */
+  private function get_or_geocode_branch_coordinates($user_id, $idx, array $branch, $full_address) {
+    $hash = md5($full_address);
+
+    // Cache hit
+    if (
+      isset($branch['geocoded_hash']) && $branch['geocoded_hash'] === $hash &&
+      isset($branch['lat']) && isset($branch['lng']) &&
+      is_numeric($branch['lat']) && is_numeric($branch['lng'])
+    ) {
+      return ['latitude' => (float) $branch['lat'], 'longitude' => (float) $branch['lng']];
+    }
+
+    $coords = $this->geocode_address($full_address);
+    if (is_wp_error($coords)) return $coords;
+
+    // Update cache in stored branch array
+    $branches = $this->get_branches($user_id);
+    if (isset($branches[$idx])) {
+      $branches[$idx]['lat']           = $coords['latitude'];
+      $branches[$idx]['lng']           = $coords['longitude'];
+      $branches[$idx]['geocoded_hash'] = $hash;
+      $this->save_branches($user_id, $branches);
+    }
+
+    return $coords;
+  }
+
+  // -------------------------------------------------------------------------
+  // Existing record builder (main location — unchanged)
+  // -------------------------------------------------------------------------
 
   private function build_availability_record($u, $search_coordinates = null) {
     $address     = get_user_meta($u->ID, self::META_ADDRESS, true);
@@ -199,14 +288,14 @@ class Helwacht_Availability {
       'city'                   => $city,
       'country'                => $country,
       'full_address'           => $full_address,
-            'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
+      'website'                => get_user_meta($u->ID, self::META_WEBSITE, true),
       'available'              => true,
       'last_update'            => get_user_meta($u->ID, self::META_LASTUPDATE, true),
+      'is_branch'              => false,
     ];
 
     if ($search_coordinates) {
       $business_coordinates = $this->get_or_geocode_user_coordinates($u->ID, $full_address);
-
       if (is_wp_error($business_coordinates)) {
         $record['distance_km'] = null;
         $record['latitude']    = null;
@@ -226,96 +315,54 @@ class Helwacht_Availability {
     return $record;
   }
 
+  // -------------------------------------------------------------------------
+  // Filter helpers (unchanged)
+  // -------------------------------------------------------------------------
+
   private function get_filterable_fields() {
     return [
-      'innung_id',
-      'innung_name',
-      'innung_billing_address',
-      'phone',
-      'first_name',
-      'last_name',
-      'address',
-      'postal_code',
-      'city',
-      'country',
-      'full_address',
-            'website',
-      'available',
-      'last_update',
+      'innung_id', 'innung_name', 'innung_billing_address', 'phone',
+      'first_name', 'last_name', 'address', 'postal_code', 'city',
+      'country', 'full_address', 'website', 'available', 'last_update',
     ];
   }
 
   private function get_filters($request) {
     $filters = [];
     $json = $request->get_json_params();
-
-    if (!is_array($json)) {
-      $json = [];
-    }
+    if (!is_array($json)) $json = [];
 
     $raw_body = trim((string) $request->get_body());
     if (empty($json) && $raw_body !== '' && strpos($raw_body, '{') === 0) {
       $decoded = json_decode($raw_body, true);
-      if (is_array($decoded)) {
-        $json = $decoded;
-      }
+      if (is_array($decoded)) $json = $decoded;
     }
 
     foreach ($this->get_filterable_fields() as $field) {
       $value = $request->get_param($field);
-
       if (($value === null || $value === '') && array_key_exists($field, $json)) {
         $value = $json[$field];
       }
-
-      if ($value === null || $value === '') {
-        continue;
-      }
-
+      if ($value === null || $value === '') continue;
       $filters[$field] = $this->sanitize_filter_value($value);
     }
-
     return $filters;
   }
 
   private function get_search_query($request) {
     $json = $request->get_json_params();
-    if (!is_array($json)) {
-      $json = [];
-    }
-
+    if (!is_array($json)) $json = [];
     $value = $request->get_param('q');
-
-    if (($value === null || $value === '') && array_key_exists('q', $json)) {
-      $value = $json['q'];
-    }
-
-    if ($value === null) {
-      return '';
-    }
-
+    if (($value === null || $value === '') && array_key_exists('q', $json)) $value = $json['q'];
+    if ($value === null) return '';
     $value = trim(sanitize_text_field((string) $value));
-
-    if ($value === '') {
-      return '';
-    }
-
-    if (mb_strlen($value) > self::MAX_QUERY_LENGTH) {
-      return '';
-    }
-
+    if ($value === '' || mb_strlen($value) > self::MAX_QUERY_LENGTH) return '';
     return $value;
   }
 
   private function sanitize_filter_value($value) {
-    if (is_bool($value)) {
-      return $value ? 'true' : 'false';
-    }
-
-    if (is_array($value)) {
-      $value = reset($value);
-    }
-
+    if (is_bool($value)) return $value ? 'true' : 'false';
+    if (is_array($value)) $value = reset($value);
     return trim(sanitize_text_field((string) $value));
   }
 
@@ -333,160 +380,87 @@ class Helwacht_Availability {
       'innung_billing_address' => self::META_INNUNG_ADDRESS,
     ];
 
-    $query_filters = [
-      'meta'   => [],
-      'search' => '',
-    ];
-
+    $query_filters = ['meta' => [], 'search' => ''];
     foreach ($meta_map as $field => $meta_key) {
-      if (!isset($filters[$field])) {
-        continue;
-      }
-
-      $query_filters['meta'][] = [
-        'key'     => $meta_key,
-        'value'   => $filters[$field],
-        'compare' => 'LIKE',
-      ];
+      if (!isset($filters[$field])) continue;
+      $query_filters['meta'][] = ['key' => $meta_key, 'value' => $filters[$field], 'compare' => 'LIKE'];
     }
-
-    if (isset($filters['email'])) {
-      $query_filters['search'] = $filters['email'];
-    }
-
+    if (isset($filters['email'])) $query_filters['search'] = $filters['email'];
     return $query_filters;
   }
 
   private function record_matches_filters($record, $filters) {
     foreach ($filters as $field => $expected) {
-      if (!array_key_exists($field, $record)) {
-        return false;
-      }
-
+      if (!array_key_exists($field, $record)) return false;
       $actual = $record[$field];
-
       if (is_bool($actual)) {
         $expected_bool = filter_var($expected, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        if ($expected_bool === null || $actual !== $expected_bool) {
-          return false;
-        }
+        if ($expected_bool === null || $actual !== $expected_bool) return false;
         continue;
       }
-
-      if (stripos((string) $actual, (string) $expected) === false) {
-        return false;
-      }
+      if (stripos((string) $actual, (string) $expected) === false) return false;
     }
-
     return true;
   }
 
+  // -------------------------------------------------------------------------
+  // Toggle (unchanged)
+  // -------------------------------------------------------------------------
+
   public function rest_toggle_availability(\WP_REST_Request $request) {
     $uid = get_current_user_id();
-
     if (!$uid) {
-      return new \WP_REST_Response([
-        'success' => false,
-        'data'    => ['message' => 'Not logged in'],
-      ], 401);
+      return new \WP_REST_Response(['success' => false, 'data' => ['message' => 'Not logged in']], 401);
     }
-
     try {
       $current = get_user_meta($uid, self::META_AVAILABLE, true) === '1';
       $new = $current ? '0' : '1';
-
       update_user_meta($uid, self::META_AVAILABLE, $new);
       update_user_meta($uid, self::META_LASTUPDATE, current_time('c'));
-
       return new \WP_REST_Response([
         'success' => true,
-        'data'    => [
-          'available'   => $new === '1',
-          'last_update' => get_user_meta($uid, self::META_LASTUPDATE, true),
-        ],
+        'data'    => ['available' => $new === '1', 'last_update' => get_user_meta($uid, self::META_LASTUPDATE, true)],
       ], 200);
     } catch (\Throwable $e) {
-      return new \WP_REST_Response([
-        'success' => false,
-        'data'    => [
-          'message' => $e->getMessage(),
-        ],
-      ], 500);
+      return new \WP_REST_Response(['success' => false, 'data' => ['message' => $e->getMessage()]], 500);
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Shared utilities (unchanged)
+  // -------------------------------------------------------------------------
+
   private function get_innung_name($user_id, $fallback = '') {
     $value = trim((string) get_user_meta($user_id, self::META_INNUNG_NAME, true));
-
-    if ($value === '') {
-      $value = trim((string) get_user_meta($user_id, 'company', true));
-    }
-
+    if ($value === '') $value = trim((string) get_user_meta($user_id, 'company', true));
     return $value !== '' ? $value : $fallback;
   }
 
   private function build_full_address($address, $postal_code, $city, $country = '') {
-    $parts = array_filter([
-      trim((string) $address),
-      trim((string) $postal_code),
-      trim((string) $city),
-      trim((string) $country),
-    ]);
-
+    $parts = array_filter([trim((string) $address), trim((string) $postal_code), trim((string) $city), trim((string) $country)]);
     return implode(' ', $parts);
   }
 
   private function build_innung_billing_address($user_id) {
     $manual = trim((string) get_user_meta($user_id, self::META_INNUNG_ADDRESS, true));
-    if ($manual !== '') {
-      return $manual;
-    }
-
+    if ($manual !== '') return $manual;
     $address     = trim((string) get_user_meta($user_id, self::META_ADDRESS, true));
     $postal_code = trim((string) get_user_meta($user_id, self::META_POSTAL_CODE, true));
     $city        = trim((string) get_user_meta($user_id, self::META_CITY, true));
-    $country     = self::DEFAULT_COUNTRY;
-
-    $parts = array_filter([
-      $address,
-      trim($postal_code . ' ' . $city),
-      $country,
-    ]);
-
+    $parts = array_filter([$address, trim($postal_code . ' ' . $city), self::DEFAULT_COUNTRY]);
     return implode(' ', $parts);
   }
 
   private function format_phone_international($phone, $default_country_code = '+43') {
     $phone = trim((string) $phone);
-
-    if ($phone === '') {
-      return '';
-    }
-
+    if ($phone === '') return '';
     $phone = preg_replace('/[^\d+]/', '', $phone);
-
-    if (strpos($phone, '00') === 0) {
-      $phone = '+' . substr($phone, 2);
-    }
-
-    if (strpos($phone, '+') === 0) {
-      return preg_replace('/(?!^)\+/', '', $phone);
-    }
-
+    if (strpos($phone, '00') === 0) $phone = '+' . substr($phone, 2);
+    if (strpos($phone, '+') === 0) return preg_replace('/(?!^)\+/', '', $phone);
     $digits = preg_replace('/\D+/', '', $phone);
-
-    if ($digits === '') {
-      return '';
-    }
-
-    if (strpos($digits, '43') === 0) {
-      return '+' . $digits;
-    }
-
-    if (strpos($digits, '0') === 0) {
-      $digits = substr($digits, 1);
-    }
-
+    if ($digits === '') return '';
+    if (strpos($digits, '43') === 0) return '+' . $digits;
+    if (strpos($digits, '0') === 0) $digits = substr($digits, 1);
     return $default_country_code . $digits;
   }
 
@@ -494,110 +468,48 @@ class Helwacht_Availability {
     if (defined('HELWACHT_MAPBOX_TOKEN') && is_string(HELWACHT_MAPBOX_TOKEN) && trim(HELWACHT_MAPBOX_TOKEN) !== '') {
       return trim(HELWACHT_MAPBOX_TOKEN);
     }
-
     $env_token = getenv('HELWACHT_MAPBOX_TOKEN');
-    if (is_string($env_token) && trim($env_token) !== '') {
-      return trim($env_token);
-    }
-
+    if (is_string($env_token) && trim($env_token) !== '') return trim($env_token);
     $token = get_option(self::OPTION_MAPBOX_TOKEN);
-    if (is_string($token) && trim($token) !== '') {
-      return trim($token);
-    }
-
+    if (is_string($token) && trim($token) !== '') return trim($token);
     return '';
   }
 
-  /**
-   * Determines the client IP used for rate limiting.
-   *
-   * Defaults to REMOTE_ADDR, because that value cannot be spoofed by the
-   * client. If the site sits behind a trusted proxy (e.g. Cloudflare),
-   * REMOTE_ADDR would be the same for every visitor. In that case the
-   * constant HELWACHT_TRUST_PROXY = true makes it use the first (leftmost)
-   * X-Forwarded-For IP. Only enable this when a proxy is actually in front,
-   * otherwise the header can be spoofed and the per-IP limit bypassed.
-   */
   private function get_client_ip() {
     if (defined('HELWACHT_TRUST_PROXY') && HELWACHT_TRUST_PROXY && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
       $parts = explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR']);
       $candidate = trim($parts[0]);
-
-      if (filter_var($candidate, FILTER_VALIDATE_IP)) {
-        return $candidate;
-      }
+      if (filter_var($candidate, FILTER_VALIDATE_IP)) return $candidate;
     }
-
     $remote = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
-
     return filter_var($remote, FILTER_VALIDATE_IP) ? $remote : 'unknown';
   }
 
-  /**
-   * Checks the daily limit for geocoding requests and increments on success.
-   *
-   * - Per IP:    RATE_LIMIT_IP_PER_DAY requests per day
-   * - Global:    RATE_LIMIT_GLOBAL_PER_DAY requests per day (safety net, since
-   *              Mapbox itself has no spending cap)
-   * - Monthly:   RATE_LIMIT_GLOBAL_PER_MONTH requests per month (Mapbox free tier
-   *              budget — 20k reserved for geocoding, 80k for autocomplete)
-   *
-   * Returns null when the request is allowed, otherwise a WP_Error with HTTP
-   * status 429. The counters live in transients with a per-day / per-month key
-   * and expire automatically (no permanent bloating of the DB).
-   *
-   * Note: transients are not atomic. With many concurrent requests there can
-   * be minor inaccuracies, which is uncritical for pure cost protection.
-   */
   private function enforce_geocode_rate_limit() {
-    $day        = current_time('Ymd');
-    $month      = current_time('Ym');
-    $ip         = $this->get_client_ip();
-    $ip_key       = 'helwacht_rl_ip_' . md5($ip) . '_' . $day;
-    $global_key   = 'helwacht_rl_global_' . $day;
-    $monthly_key  = 'helwacht_rl_global_monthly_' . $month;
+    $day   = current_time('Ymd');
+    $month = current_time('Ym');
+    $ip    = $this->get_client_ip();
+    $ip_key      = 'helwacht_rl_ip_' . md5($ip) . '_' . $day;
+    $global_key  = 'helwacht_rl_global_' . $day;
+    $monthly_key = 'helwacht_rl_global_monthly_' . $month;
 
     $ip_count     = (int) get_transient($ip_key);
     $global_count = (int) get_transient($global_key);
     $monthly_count = (int) get_transient($monthly_key);
 
-    if ($ip_count >= self::RATE_LIMIT_IP_PER_DAY) {
-      return new \WP_Error(
-        'helwacht_rate_limited',
-        'Reached daily limit for search queries. Try again later.',
-        ['status' => 429]
-      );
-    }
-
-    if ($global_count >= self::RATE_LIMIT_GLOBAL_PER_DAY) {
-      return new \WP_Error(
-        'helwacht_rate_limited_global',
-        'Search is temporarily unavailable. Please try again later.',
-        ['status' => 429]
-      );
-    }
-
-    if ($monthly_count >= self::RATE_LIMIT_GLOBAL_PER_MONTH) {
-      return new \WP_Error(
-        'helwacht_rate_limited_monthly',
-        'Search is temporarily unavailable. Please try again later.',
-        ['status' => 429]
-      );
-    }
+    if ($ip_count     >= self::RATE_LIMIT_IP_PER_DAY)       return new \WP_Error('helwacht_rate_limited',         'Reached daily limit for search queries. Try again later.',      ['status' => 429]);
+    if ($global_count >= self::RATE_LIMIT_GLOBAL_PER_DAY)   return new \WP_Error('helwacht_rate_limited_global',  'Search is temporarily unavailable. Please try again later.',    ['status' => 429]);
+    if ($monthly_count >= self::RATE_LIMIT_GLOBAL_PER_MONTH) return new \WP_Error('helwacht_rate_limited_monthly', 'Search is temporarily unavailable. Please try again later.',   ['status' => 429]);
 
     set_transient($ip_key, $ip_count + 1, DAY_IN_SECONDS);
     set_transient($global_key, $global_count + 1, DAY_IN_SECONDS);
     set_transient($monthly_key, $monthly_count + 1, 31 * DAY_IN_SECONDS);
-
     return null;
   }
 
   private function geocode_address($address) {
     $token = $this->get_mapbox_token();
-
-    if ($token === '') {
-      return new \WP_Error('helwacht_missing_mapbox_token', 'Mapbox token is missing.', ['status' => 500]);
-    }
+    if ($token === '') return new \WP_Error('helwacht_missing_mapbox_token', 'Mapbox token is missing.', ['status' => 500]);
 
     $url = add_query_arg([
       'access_token' => $token,
@@ -607,16 +519,8 @@ class Helwacht_Availability {
       'language'     => 'de',
     ], 'https://api.mapbox.com/geocoding/v5/mapbox.places/' . rawurlencode($address) . '.json');
 
-    $response = wp_remote_get($url, [
-      'timeout' => 15,
-      'headers' => [
-        'Accept' => 'application/json',
-      ],
-    ]);
-
-    if (is_wp_error($response)) {
-      return new \WP_Error('helwacht_geocode_request_failed', $response->get_error_message(), ['status' => 502]);
-    }
+    $response = wp_remote_get($url, ['timeout' => 15, 'headers' => ['Accept' => 'application/json']]);
+    if (is_wp_error($response)) return new \WP_Error('helwacht_geocode_request_failed', $response->get_error_message(), ['status' => 502]);
 
     $status_code = wp_remote_retrieve_response_code($response);
     $body = wp_remote_retrieve_body($response);
@@ -624,10 +528,7 @@ class Helwacht_Availability {
 
     if ($status_code < 200 || $status_code >= 300) {
       $message = 'Mapbox geocoding failed.';
-      if (is_array($data) && !empty($data['message'])) {
-        $message = sanitize_text_field((string) $data['message']);
-      }
-
+      if (is_array($data) && !empty($data['message'])) $message = sanitize_text_field((string) $data['message']);
       return new \WP_Error('helwacht_geocode_http_error', $message, ['status' => 502]);
     }
 
@@ -635,41 +536,26 @@ class Helwacht_Availability {
       return new \WP_Error('helwacht_geocode_no_result', 'Address could not be geocoded.', ['status' => 400]);
     }
 
-    return [
-      'longitude' => (float) $data['features'][0]['center'][0],
-      'latitude'  => (float) $data['features'][0]['center'][1],
-    ];
+    return ['longitude' => (float) $data['features'][0]['center'][0], 'latitude' => (float) $data['features'][0]['center'][1]];
   }
 
   private function get_or_geocode_user_coordinates($user_id, $full_address) {
-    $hash = md5($full_address);
+    $hash        = md5($full_address);
     $stored_hash = (string) get_user_meta($user_id, self::META_GEOCODED_HASH, true);
-    $stored_lat = get_user_meta($user_id, self::META_LATITUDE, true);
-    $stored_lng = get_user_meta($user_id, self::META_LONGITUDE, true);
+    $stored_lat  = get_user_meta($user_id, self::META_LATITUDE, true);
+    $stored_lng  = get_user_meta($user_id, self::META_LONGITUDE, true);
 
-    if (
-      $stored_hash === $hash &&
-      $stored_lat !== '' &&
-      $stored_lng !== '' &&
-      is_numeric($stored_lat) &&
-      is_numeric($stored_lng)
-    ) {
-      return [
-        'latitude'  => (float) $stored_lat,
-        'longitude' => (float) $stored_lng,
-      ];
+    if ($stored_hash === $hash && $stored_lat !== '' && $stored_lng !== '' && is_numeric($stored_lat) && is_numeric($stored_lng)) {
+      return ['latitude' => (float) $stored_lat, 'longitude' => (float) $stored_lng];
     }
 
     $coordinates = $this->geocode_address($full_address);
+    if (is_wp_error($coordinates)) return $coordinates;
 
-    if (is_wp_error($coordinates)) {
-      return $coordinates;
-    }
-
-    update_user_meta($user_id, self::META_LATITUDE, $coordinates['latitude']);
-    update_user_meta($user_id, self::META_LONGITUDE, $coordinates['longitude']);
-    update_user_meta($user_id, self::META_GEOCODED_HASH, $hash);
-    update_user_meta($user_id, self::META_GEOCODED_AT, current_time('c'));
+    update_user_meta($user_id, self::META_LATITUDE,        $coordinates['latitude']);
+    update_user_meta($user_id, self::META_LONGITUDE,       $coordinates['longitude']);
+    update_user_meta($user_id, self::META_GEOCODED_HASH,   $hash);
+    update_user_meta($user_id, self::META_GEOCODED_AT,     current_time('c'));
     update_user_meta($user_id, self::META_GEOCODED_SOURCE, 'mapbox');
 
     return $coordinates;
@@ -677,23 +563,20 @@ class Helwacht_Availability {
 
   private function calculate_distance_km($lat1, $lng1, $lat2, $lng2) {
     $earth_radius_km = 6371;
-
     $d_lat = deg2rad($lat2 - $lat1);
     $d_lng = deg2rad($lng2 - $lng1);
-
     $a = sin($d_lat / 2) * sin($d_lat / 2)
-      + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
-      * sin($d_lng / 2) * sin($d_lng / 2);
-
-    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-
-    return round($earth_radius_km * $c, 2);
+      + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($d_lng / 2) * sin($d_lng / 2);
+    return round($earth_radius_km * 2 * atan2(sqrt($a), sqrt(1 - $a)), 2);
   }
+
+  // -------------------------------------------------------------------------
+  // Shortcode: toggle (unchanged)
+  // -------------------------------------------------------------------------
 
   public function shortcode_toggle() {
     if (!is_user_logged_in()) {
       $login_url = wp_login_url(get_permalink());
-
       return '
         <div style="display:flex;justify-content:center;">
           <div style="padding:20px;border:1px solid #ddd;border-radius:12px;max-width:420px;width:100%;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
@@ -708,94 +591,50 @@ class Helwacht_Availability {
       ';
     }
 
-    $uid = get_current_user_id();
+    $uid     = get_current_user_id();
     $current = get_user_meta($uid, self::META_AVAILABLE, true) === '1';
-    $nonce = wp_create_nonce('wp_rest');
+    $nonce   = wp_create_nonce('wp_rest');
 
     ob_start(); ?>
       <div style="display:flex;justify-content:center;">
         <div style="padding:20px;border:1px solid #ddd;border-radius:12px;max-width:420px;width:100%;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
-          
           <p style="margin-bottom:20px;">
             <strong>Ihre aktuelle Verfügbarkeit:</strong><br>
             <span id="hw-status"><?php echo $current ? 'Verfügbar' : 'Nicht verfügbar'; ?></span>
           </p>
-
           <label style="position:relative;display:inline-block;width:60px;height:34px;">
             <input type="checkbox" id="hw-toggle" <?php echo $current ? 'checked' : ''; ?> style="opacity:0;width:0;height:0;">
-            <span style="
-              position:absolute;
-              cursor:pointer;
-              top:0;left:0;right:0;bottom:0;
-              background-color:<?php echo $current ? '#4CAF50' : 'var(--global-palette1)'; ?>;
-              transition:.3s;
-              border-radius:34px;
-            " id="hw-slider"></span>
-            <span style="
-              position:absolute;
-              content:'';
-              height:26px;width:26px;
-              left:4px;
-              bottom:4px;
-              background-color:white;
-              transition:.3s;
-              border-radius:50%;
-              transform:<?php echo $current ? 'translateX(26px)' : 'translateX(0)'; ?>;
-            " id="hw-knob"></span>
+            <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:<?php echo $current ? '#4CAF50' : 'var(--global-palette1)'; ?>;transition:.3s;border-radius:34px;" id="hw-slider"></span>
+            <span style="position:absolute;content:'';height:26px;width:26px;left:4px;bottom:4px;background-color:white;transition:.3s;border-radius:50%;transform:<?php echo $current ? 'translateX(26px)' : 'translateX(0)'; ?>;" id="hw-knob"></span>
           </label>
-
           <p id="hw-msg" style="margin-top:15px;font-size:14px;color:#666;"></p>
-
         </div>
       </div>
-
       <script>
         (function() {
           const checkbox = document.getElementById('hw-toggle');
-          const status = document.getElementById('hw-status');
-          const msg = document.getElementById('hw-msg');
-          const slider = document.getElementById('hw-slider');
-          const knob = document.getElementById('hw-knob');
-
-          if (!checkbox || !status || !msg || !slider || !knob) {
-            return;
-          }
-
+          const status   = document.getElementById('hw-status');
+          const msg      = document.getElementById('hw-msg');
+          const slider   = document.getElementById('hw-slider');
+          const knob     = document.getElementById('hw-knob');
+          if (!checkbox || !status || !msg || !slider || !knob) return;
           checkbox.addEventListener('change', async () => {
             msg.textContent = 'Speichere...';
-
             const previousChecked = !checkbox.checked;
-
             try {
               const res = await fetch('<?php echo esc_url(rest_url('helwacht/v1/toggle')); ?>', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                  'Accept': 'application/json',
-                  'X-WP-Nonce': '<?php echo esc_js($nonce); ?>'
-                },
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-WP-Nonce': '<?php echo esc_js($nonce); ?>' },
                 body: ''
               });
-
               const raw = await res.text();
               let data;
-
-              try {
-                data = JSON.parse(raw);
-              } catch (parseError) {
-                throw new Error('Server liefert kein JSON (HTTP ' + res.status + ', URL: ' + res.url + '). Antwort beginnt mit: ' + raw.slice(0, 120));
+              try { data = JSON.parse(raw); } catch (parseError) {
+                throw new Error('Server liefert kein JSON (HTTP ' + res.status + '). Antwort beginnt mit: ' + raw.slice(0, 120));
               }
-
-              if (!res.ok) {
-                throw new Error((data && data.data && (data.data.message || data.data)) || ('HTTP ' + res.status));
-              }
-
-              if (!data.success) {
-                throw new Error((data.data && (data.data.message || data.data)) || 'Fehler');
-              }
-
+              if (!res.ok) throw new Error((data && data.data && (data.data.message || data.data)) || ('HTTP ' + res.status));
+              if (!data.success) throw new Error((data.data && (data.data.message || data.data)) || 'Fehler');
               const available = !!data.data.available;
-
               status.textContent = available ? 'Verfügbar' : 'Nicht verfügbar';
               slider.style.backgroundColor = available ? '#4CAF50' : 'var(--global-palette1)';
               knob.style.transform = available ? 'translateX(26px)' : 'translateX(0)';
@@ -815,10 +654,20 @@ class Helwacht_Availability {
   }
 }
 
+// =============================================================================
+// Admin: User profile fields
+// =============================================================================
+
 add_action('show_user_profile', 'helwacht_user_fields');
 add_action('edit_user_profile', 'helwacht_user_fields');
 
 function helwacht_user_fields($user) {
+  $branches_raw = get_user_meta($user->ID, 'helwacht_branches', true);
+  $branches = [];
+  if ($branches_raw && is_string($branches_raw)) {
+    $decoded = json_decode($branches_raw, true);
+    if (is_array($decoded)) $branches = $decoded;
+  }
   ?>
   <h2>Helwacht Daten</h2>
   <table class="form-table">
@@ -830,7 +679,6 @@ function helwacht_user_fields($user) {
           class="regular-text" />
       </td>
     </tr>
-
     <tr>
       <th><label for="phone">Telefon</label></th>
       <td>
@@ -840,7 +688,6 @@ function helwacht_user_fields($user) {
         <p class="description">Wird über die API im internationalen Format ausgegeben, z. B. +436641234567.</p>
       </td>
     </tr>
-
     <tr>
       <th><label for="address">Adresse</label></th>
       <td>
@@ -849,7 +696,6 @@ function helwacht_user_fields($user) {
           class="regular-text" />
       </td>
     </tr>
-
     <tr>
       <th><label for="postal_code">Postleitzahl</label></th>
       <td>
@@ -858,7 +704,6 @@ function helwacht_user_fields($user) {
           class="regular-text" />
       </td>
     </tr>
-
     <tr>
       <th><label for="city">Stadt</label></th>
       <td>
@@ -867,7 +712,6 @@ function helwacht_user_fields($user) {
           class="regular-text" />
       </td>
     </tr>
-
     <tr>
       <th><label for="website">Webseite</label></th>
       <td>
@@ -876,18 +720,122 @@ function helwacht_user_fields($user) {
           class="regular-text" />
       </td>
     </tr>
-
     <tr>
       <th><label for="innung_address">Innung Billing Adresse</label></th>
       <td>
         <input type="text" name="innung_address" id="innung_address"
           value="<?php echo esc_attr(get_user_meta($user->ID, 'innung_address', true)); ?>"
           class="regular-text" />
-        <p class="description">Optionaler Override. Wenn leer, wird die Adresse automatisch als Ein-String gebaut: Straße PLZ Stadt Österreich.</p>
+        <p class="description">Optionaler Override. Wenn leer, wird die Adresse automatisch gebaut.</p>
       </td>
     </tr>
   </table>
   <p><em>Vorname, Nachname und E-Mail können im normalen WordPress-Benutzerprofil gepflegt werden.</em></p>
+
+  <h2>Zweigstellen</h2>
+  <p class="description">Gleicher Betrieb, zusätzliche Standorte. Telefon und Website werden vom Hauptbetrieb geerbt, wenn leer.</p>
+
+  <div id="helwacht-branches">
+    <?php foreach ($branches as $i => $branch): ?>
+    <div class="helwacht-branch" style="border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:12px;background:#fafafa;">
+      <strong>Zweigstelle <?php echo $i + 1; ?></strong>
+      <a href="#" class="helwacht-remove-branch" style="float:right;color:#cc0000;text-decoration:none;font-size:13px;">&#10005; Entfernen</a>
+      <table class="form-table" style="margin-top:8px;">
+        <tr>
+          <th style="width:160px;"><label>Adresse</label></th>
+          <td><input type="text" name="helwacht_branch[<?php echo $i; ?>][address]"
+            value="<?php echo esc_attr($branch['address'] ?? ''); ?>" class="regular-text" /></td>
+        </tr>
+        <tr>
+          <th><label>Postleitzahl</label></th>
+          <td><input type="text" name="helwacht_branch[<?php echo $i; ?>][postal_code]"
+            value="<?php echo esc_attr($branch['postal_code'] ?? ''); ?>" class="regular-text" /></td>
+        </tr>
+        <tr>
+          <th><label>Stadt</label></th>
+          <td><input type="text" name="helwacht_branch[<?php echo $i; ?>][city]"
+            value="<?php echo esc_attr($branch['city'] ?? ''); ?>" class="regular-text" /></td>
+        </tr>
+        <tr>
+          <th><label>Telefon <span style="font-weight:normal;color:#888;">(optional)</span></label></th>
+          <td><input type="text" name="helwacht_branch[<?php echo $i; ?>][phone]"
+            value="<?php echo esc_attr($branch['phone'] ?? ''); ?>" class="regular-text" /></td>
+        </tr>
+        <tr>
+          <th><label>Webseite <span style="font-weight:normal;color:#888;">(optional)</span></label></th>
+          <td><input type="text" name="helwacht_branch[<?php echo $i; ?>][website]"
+            value="<?php echo esc_attr($branch['website'] ?? ''); ?>" class="regular-text" /></td>
+        </tr>
+      </table>
+    </div>
+    <?php endforeach; ?>
+  </div>
+
+  <p>
+    <button type="button" id="helwacht-add-branch" class="button">+ Zweigstelle hinzufügen</button>
+  </p>
+
+  <script>
+  (function () {
+    var container = document.getElementById('helwacht-branches');
+    var addBtn    = document.getElementById('helwacht-add-branch');
+    if (!container || !addBtn) return;
+
+    function getNextIndex() {
+      var existing = container.querySelectorAll('.helwacht-branch');
+      return existing.length;
+    }
+
+    function attachRemove(branchEl) {
+      var link = branchEl.querySelector('.helwacht-remove-branch');
+      if (link) {
+        link.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (confirm('Zweigstelle wirklich entfernen?')) {
+            branchEl.remove();
+            renumber();
+          }
+        });
+      }
+    }
+
+    function renumber() {
+      container.querySelectorAll('.helwacht-branch').forEach(function (el, i) {
+        var heading = el.querySelector('strong');
+        if (heading) heading.textContent = 'Zweigstelle ' + (i + 1);
+        el.querySelectorAll('input').forEach(function (input) {
+          input.name = input.name.replace(/helwacht_branch\[\d+\]/, 'helwacht_branch[' + i + ']');
+        });
+      });
+    }
+
+    container.querySelectorAll('.helwacht-branch').forEach(attachRemove);
+
+    addBtn.addEventListener('click', function () {
+      var idx = getNextIndex();
+      var div = document.createElement('div');
+      div.className = 'helwacht-branch';
+      div.style.cssText = 'border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:12px;background:#fafafa;';
+      div.innerHTML =
+        '<strong>Zweigstelle ' + (idx + 1) + '</strong>' +
+        '<a href="#" class="helwacht-remove-branch" style="float:right;color:#cc0000;text-decoration:none;font-size:13px;">&#10005; Entfernen</a>' +
+        '<table class="form-table" style="margin-top:8px;">' +
+          '<tr><th style="width:160px;"><label>Adresse</label></th>' +
+            '<td><input type="text" name="helwacht_branch[' + idx + '][address]" value="" class="regular-text" /></td></tr>' +
+          '<tr><th><label>Postleitzahl</label></th>' +
+            '<td><input type="text" name="helwacht_branch[' + idx + '][postal_code]" value="" class="regular-text" /></td></tr>' +
+          '<tr><th><label>Stadt</label></th>' +
+            '<td><input type="text" name="helwacht_branch[' + idx + '][city]" value="" class="regular-text" /></td></tr>' +
+          '<tr><th><label>Telefon <span style="font-weight:normal;color:#888;">(optional)</span></label></th>' +
+            '<td><input type="text" name="helwacht_branch[' + idx + '][phone]" value="" class="regular-text" /></td></tr>' +
+          '<tr><th><label>Webseite <span style="font-weight:normal;color:#888;">(optional)</span></label></th>' +
+            '<td><input type="text" name="helwacht_branch[' + idx + '][website]" value="" class="regular-text" /></td></tr>' +
+        '</table>';
+      attachRemove(div);
+      container.appendChild(div);
+    });
+  })();
+  </script>
   <?php
 }
 
@@ -895,28 +843,27 @@ add_action('personal_options_update', 'helwacht_save_user_fields');
 add_action('edit_user_profile_update', 'helwacht_save_user_fields');
 
 function helwacht_save_user_fields($user_id) {
-  if (!current_user_can('edit_user', $user_id)) {
-    return false;
-  }
+  if (!current_user_can('edit_user', $user_id)) return false;
 
-  $old_address = trim((string) get_user_meta($user_id, 'address', true));
+  $old_address     = trim((string) get_user_meta($user_id, 'address', true));
   $old_postal_code = trim((string) get_user_meta($user_id, 'postal_code', true));
-  $old_city = trim((string) get_user_meta($user_id, 'city', true));
+  $old_city        = trim((string) get_user_meta($user_id, 'city', true));
 
-  $innung_name = sanitize_text_field($_POST['innung_name'] ?? '');
-  $new_address = sanitize_text_field($_POST['address'] ?? '');
-  $new_postal_code = sanitize_text_field($_POST['postal_code'] ?? '');
-  $new_city = sanitize_text_field($_POST['city'] ?? '');
+  $innung_name     = sanitize_text_field($_POST['innung_name']     ?? '');
+  $new_address     = sanitize_text_field($_POST['address']         ?? '');
+  $new_postal_code = sanitize_text_field($_POST['postal_code']     ?? '');
+  $new_city        = sanitize_text_field($_POST['city']            ?? '');
 
-  update_user_meta($user_id, 'innung_name', $innung_name);
-  update_user_meta($user_id, 'company', $innung_name);
-  update_user_meta($user_id, 'phone', sanitize_text_field($_POST['phone'] ?? ''));
-  update_user_meta($user_id, 'address', $new_address);
-  update_user_meta($user_id, 'postal_code', $new_postal_code);
-  update_user_meta($user_id, 'city', $new_city);
-  update_user_meta($user_id, 'website', esc_url_raw($_POST['website'] ?? ''));
+  update_user_meta($user_id, 'innung_name',    $innung_name);
+  update_user_meta($user_id, 'company',        $innung_name);
+  update_user_meta($user_id, 'phone',          sanitize_text_field($_POST['phone']    ?? ''));
+  update_user_meta($user_id, 'address',        $new_address);
+  update_user_meta($user_id, 'postal_code',    $new_postal_code);
+  update_user_meta($user_id, 'city',           $new_city);
+  update_user_meta($user_id, 'website',        esc_url_raw($_POST['website']          ?? ''));
   update_user_meta($user_id, 'innung_address', sanitize_text_field($_POST['innung_address'] ?? ''));
 
+  // Clear geocode cache if main address changed
   if ($old_address !== $new_address || $old_postal_code !== $new_postal_code || $old_city !== $new_city) {
     delete_user_meta($user_id, 'helwacht_latitude');
     delete_user_meta($user_id, 'helwacht_longitude');
@@ -924,6 +871,53 @@ function helwacht_save_user_fields($user_id) {
     delete_user_meta($user_id, 'helwacht_geocoded_hash');
     delete_user_meta($user_id, 'helwacht_geocoded_source');
   }
+
+  // Save branches
+  $raw_branches = $_POST['helwacht_branch'] ?? [];
+  $branches = [];
+  if (is_array($raw_branches)) {
+    foreach ($raw_branches as $branch) {
+      if (!is_array($branch)) continue;
+      $address     = sanitize_text_field($branch['address']     ?? '');
+      $postal_code = sanitize_text_field($branch['postal_code'] ?? '');
+      $city        = sanitize_text_field($branch['city']        ?? '');
+      // Skip empty rows
+      if ($address === '' && $postal_code === '' && $city === '') continue;
+
+      $entry = [
+        'address'     => $address,
+        'postal_code' => $postal_code,
+        'city'        => $city,
+        'phone'       => sanitize_text_field($branch['phone']   ?? ''),
+        'website'     => esc_url_raw($branch['website']         ?? ''),
+      ];
+
+      // Preserve geocode cache if address unchanged
+      $old_branches_raw = get_user_meta($user_id, 'helwacht_branches', true);
+      $old_branches = [];
+      if ($old_branches_raw && is_string($old_branches_raw)) {
+        $decoded = json_decode($old_branches_raw, true);
+        if (is_array($decoded)) $old_branches = $decoded;
+      }
+      foreach ($old_branches as $old) {
+        if (
+          ($old['address']     ?? '') === $address &&
+          ($old['postal_code'] ?? '') === $postal_code &&
+          ($old['city']        ?? '') === $city &&
+          isset($old['lat'], $old['lng'], $old['geocoded_hash'])
+        ) {
+          $entry['lat']           = $old['lat'];
+          $entry['lng']           = $old['lng'];
+          $entry['geocoded_hash'] = $old['geocoded_hash'];
+          break;
+        }
+      }
+
+      $branches[] = $entry;
+    }
+  }
+
+  update_user_meta($user_id, 'helwacht_branches', wp_json_encode($branches));
 }
 
 new Helwacht_Availability();
