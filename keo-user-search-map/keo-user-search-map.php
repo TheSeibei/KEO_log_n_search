@@ -671,7 +671,7 @@ class KEO_User_Search_Map {
           const searchEl = document.createElement('div');
           searchEl.className = 'hws-marker-search';
           searchEl.textContent = '📍';
-          const searchPopup = new maplibregl.Popup({ offset: 28, closeButton: true })
+          const searchPopup = new maplibregl.Popup({ offset: 28, closeButton: true, focusAfterOpen: false })
             .setHTML(searchLabel ? '<strong>' + h(searchLabel) + '</strong>' : '<strong>Ihr Standort</strong>');
           const searchMarker = new maplibregl.Marker({ element: searchEl, anchor: 'bottom' })
             .setLngLat([searchLng, searchLat])
@@ -694,7 +694,7 @@ class KEO_User_Search_Map {
             const html = '<strong>' + h(b.innung_name || '') + '</strong>'
               + (addr ? '<br>' + h(addr) : '')
               + (b.phone ? '<br><a class="hws-popup-phone" href="tel:' + a(b.phone) + '">' + h(b.phone) + '</a>' : '');
-            const popup = new maplibregl.Popup({ offset: 32, closeButton: true }).setHTML(html);
+            const popup = new maplibregl.Popup({ offset: 32, closeButton: true, focusAfterOpen: false }).setHTML(html);
 
             const m = new maplibregl.Marker({ element: el, anchor: 'bottom' })
               .setLngLat([b.longitude, b.latitude])
